@@ -1952,9 +1952,10 @@ main {
   100% { transform: rotate(360deg); }
 }
 .quick-action-wrapper {
-  display: flex;
+  display: inline-flex;
   flex-direction: column;
   align-items: stretch;
+  min-width: 140px;
 }
 .quick-action-result {
   font-size: 0.75rem;
@@ -1967,14 +1968,18 @@ main {
   line-height: 1.4;
   border-radius: 0 0 8px 8px;
   margin-top: -2px;
+  min-width: 200px;
+  width: max-content;
+  max-width: 400px;
 }
 .quick-action-result.visible {
-  max-height: 200px;
+  max-height: 300px;
   padding: 8px 12px;
   opacity: 1;
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-top: none;
+  overflow-y: auto;
 }
 .quick-action-result.success {
   color: var(--green, #4ade80);
