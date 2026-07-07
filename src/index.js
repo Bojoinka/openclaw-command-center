@@ -370,7 +370,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: "Missing action parameter" }));
       return;
     }
-    const result = await executeAction(action, { PORT });
+    const result = await executeAction(action, { PORT, getSessionsCached: sessions.getSessionsCached });
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(result, null, 2));
   } else if (pathname === "/api/events") {

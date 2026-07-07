@@ -307,8 +307,23 @@ function createSessionsModule(deps) {
         console.error("[Sessions Cache] API failed:", apiErr.message);
       }
 
-      // Map sessions (same logic as getSessions)
-      const mapped = sessions.map((s) => mapSession(s));
+      // Filter out group channel bindings and ended ephemeral sessions
+      // to match the Control UI's session view
+      const filtered = sessions.filter((s) => {
+        // Exclude group channel bindings (Discord, Telegram, Teams channels)
+        if (s.kind === "group") return false;
+        // Exclude completed/failed subagent and dashboard sessions
+        const key = s.key || "";
+        if (
+          (s.status === "done" || s.status === "failed") &&
+          (key.includes(":subagent:") || key.includes(":dashboard:"))
+        ) {
+          return false;
+        }
+        return true;
+      });
+
+      const mapped = filtered.map((s) => mapSession(s));
       const withOriginator = mapped.filter((s) => s.originator != null);
 
       sessionsCache = {

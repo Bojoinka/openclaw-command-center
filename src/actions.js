@@ -1,4 +1,4 @@
-const { listSessions, getSessionStatus } = require("./gateway-api");
+const { getSessionStatus } = require("./gateway-api");
 const { getCronJobs } = require("./cron");
 
 const ALLOWED_ACTIONS = new Set([
@@ -16,7 +16,7 @@ const ALLOWED_ACTIONS = new Set([
  * No CLI calls.
  */
 async function executeAction(action, deps) {
-  const { PORT } = deps;
+  const { PORT, getSessionsCached } = deps;
   const results = { success: false, action, output: "", error: null };
 
   if (!ALLOWED_ACTIONS.has(action)) {
@@ -51,12 +51,12 @@ async function executeAction(action, deps) {
         break;
 
       case "sessions-list": {
-        try {
-          const sessions = await listSessions();
-          const active = sessions.filter((s) => s.status === "running").length;
-          results.output = sessions.length + " sessions (" + active + " active)";
-        } catch (e) {
-          results.output = "API error: " + e.message;
+        const cached = getSessionsCached ? getSessionsCached() : null;
+        if (cached) {
+          const active = cached.filter((s) => s.active).length;
+          results.output = cached.length + " sessions (" + active + " active)";
+        } else {
+          results.output = "Sessions cache not ready";
         }
         results.success = true;
         break;
@@ -81,13 +81,14 @@ async function executeAction(action, deps) {
 
       case "health-check": {
         const checks = [];
-        try {
-          const sessions = await listSessions();
-          const active = sessions.filter((s) => s.status === "running").length;
+        const cached = getSessionsCached ? getSessionsCached() : null;
+        if (cached) {
+          const active = cached.filter((s) => s.active).length;
           checks.push("Gateway: OK Running");
-          checks.push("Sessions: " + sessions.length + " (" + active + " active)");
-        } catch (e) {
-          checks.push("Gateway: " + (e.message.includes("timeout") ? "SLOW" : "ERROR") + " — " + e.message);
+          checks.push("Sessions: " + cached.length + " (" + active + " active)");
+        } else {
+          checks.push("Gateway: OK Running");
+          checks.push("Sessions: cache not ready");
         }
         try {
           const cron = getCronJobs();
@@ -104,16 +105,15 @@ async function executeAction(action, deps) {
       case "clear-stale-sessions": {
         let staleCount = 0;
         let totalCount = 0;
-        try {
-          const sessions = await listSessions();
-          totalCount = sessions.length;
-          const nowMs = Date.now();
-          staleCount = sessions.filter((s) => {
-            const updated = s.updatedAt || 0;
-            return updated > 0 && nowMs - updated > 24 * 60 * 60 * 1000;
+        const cached = getSessionsCached ? getSessionsCached() : null;
+        if (cached) {
+          totalCount = cached.length;
+          staleCount = cached.filter((s) => {
+            const mins = s.minutesAgo || 0;
+            return mins > 24 * 60;
           }).length;
-        } catch (e) {
-          results.error = "Gateway API error: " + e.message;
+        } else {
+          results.error = "Sessions cache not ready";
         }
         results.output =
           "Found " +
