@@ -1,4 +1,5 @@
 const { listSessions, getSessionStatus } = require("./gateway-api");
+const { getCronJobs } = require("./cron");
 
 const ALLOWED_ACTIONS = new Set([
   "gateway-status",
@@ -11,11 +12,11 @@ const ALLOWED_ACTIONS = new Set([
 
 /**
  * Execute a Quick Action.
- * Uses Gateway HTTP API for sessions (~0.2s) with CLI fallback.
- * Cron stays on CLI (cron tool blocked by Gateway HTTP API deny list).
+ * All data comes from Gateway HTTP API or direct SQLite reads.
+ * No CLI calls.
  */
 async function executeAction(action, deps) {
-  const { runOpenClaw, extractJSON, PORT } = deps;
+  const { PORT } = deps;
   const results = { success: false, action, output: "", error: null };
 
   if (!ALLOWED_ACTIONS.has(action)) {
@@ -27,18 +28,17 @@ async function executeAction(action, deps) {
     switch (action) {
       case "gateway-status": {
         try {
-          const statusData = await getSessionStatus();
-          const lines = [];
-          if (statusData.model) lines.push("Model: " + statusData.model);
-          if (statusData.uptime) lines.push("Uptime: " + statusData.uptime);
-          if (statusData.version) lines.push("Version: " + statusData.version);
-          results.output =
-            lines.length > 0
-              ? lines.join("\n")
-              : JSON.stringify(statusData, null, 2).slice(0, 500);
+          const statusText = await getSessionStatus();
+          // session_status returns formatted text — extract key lines
+          if (typeof statusText === "string") {
+            results.output = statusText.split("\n").slice(0, 6).join("\n");
+          } else if (statusText.text) {
+            results.output = statusText.text.split("\n").slice(0, 6).join("\n");
+          } else {
+            results.output = JSON.stringify(statusText, null, 2).slice(0, 500);
+          }
         } catch (e) {
-          // Fallback to CLI
-          results.output = runOpenClaw("gateway status 2>&1") || "Unknown";
+          results.output = "Gateway API unavailable: " + e.message;
         }
         results.success = true;
         break;
@@ -56,36 +56,47 @@ async function executeAction(action, deps) {
           const active = sessions.filter((s) => s.status === "running").length;
           results.output = sessions.length + " sessions (" + active + " active)";
         } catch (e) {
-          results.output = runOpenClaw("sessions 2>&1") || "No sessions";
+          results.output = "API error: " + e.message;
         }
         results.success = true;
         break;
       }
 
-      case "cron-list":
-        // cron tool not exposed via Gateway HTTP API — use CLI
-        results.output = runOpenClaw("cron list 2>&1") || "No cron jobs";
+      case "cron-list": {
+        try {
+          const cron = getCronJobs();
+          const lines = cron.jobs.map((j) => {
+            const status = j.enabled ? "✅" : "❌";
+            const last = j.lastRunStatus || "-";
+            return `${status} ${j.agentId}/${j.name} (last: ${last})`;
+          });
+          results.output =
+            cron.total + " jobs (" + cron.enabled + " enabled)\n" + lines.join("\n");
+        } catch (e) {
+          results.output = "Failed to read cron data: " + e.message;
+        }
         results.success = true;
         break;
+      }
 
       case "health-check": {
+        const checks = [];
         try {
           const sessions = await listSessions();
           const active = sessions.filter((s) => s.status === "running").length;
-          results.output = [
-            "Gateway: OK Running",
-            "Sessions: " + sessions.length + " (" + active + " active)",
-            "Dashboard: OK Running on port " + PORT,
-          ].join("\n");
+          checks.push("Gateway: OK Running");
+          checks.push("Sessions: " + sessions.length + " (" + active + " active)");
         } catch (e) {
-          // Fallback
-          const gateway = runOpenClaw("gateway status 2>&1");
-          results.output = [
-            "Gateway: " +
-              (gateway?.includes("running") ? "OK Running" : "NOT Running"),
-            "Dashboard: OK Running on port " + PORT,
-          ].join("\n");
+          checks.push("Gateway: " + (e.message.includes("timeout") ? "SLOW" : "ERROR") + " — " + e.message);
         }
+        try {
+          const cron = getCronJobs();
+          checks.push("Cron: " + cron.total + " jobs (" + cron.enabled + " enabled, " + cron.errored + " errored)");
+        } catch (e) {
+          checks.push("Cron: unavailable");
+        }
+        checks.push("Dashboard: OK Running on port " + PORT);
+        results.output = checks.join("\n");
         results.success = true;
         break;
       }

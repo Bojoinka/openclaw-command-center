@@ -144,7 +144,7 @@ const state = createStateModule({
   getOpenClawDir,
   getSessions: (opts) => sessions.getSessions(opts),
   getSystemVitals,
-  getCronJobs: () => getCronJobs(getOpenClawDir),
+  getCronJobs: () => getCronJobs(),
   loadOperators: () => loadOperators(DATA_DIR),
   calculateOperatorStats,
   getLlmUsage: () => getLlmUsage(PATHS.state),
@@ -232,7 +232,7 @@ function handleApi(req, res) {
 
   const data = {
     sessions: sessionsList,
-    cron: getCronJobs(getOpenClawDir),
+    cron: getCronJobs(),
     system: state.getSystemStatus(),
     activity: state.getRecentActivity(),
     tokenStats,
@@ -370,7 +370,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: "Missing action parameter" }));
       return;
     }
-    const result = await executeAction(action, { runOpenClaw, extractJSON, PORT });
+    const result = await executeAction(action, { PORT });
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(result, null, 2));
   } else if (pathname === "/api/events") {
@@ -495,7 +495,7 @@ const server = http.createServer(async (req, res) => {
       ),
     );
   } else if (pathname === "/api/cron") {
-    const cron = getCronJobs(getOpenClawDir);
+    const cron = getCronJobs();
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ cron }, null, 2));
   } else if (pathname === "/api/operators") {

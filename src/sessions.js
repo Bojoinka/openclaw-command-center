@@ -300,19 +300,11 @@ function createSessionsModule(deps) {
     sessionsCache.refreshing = true;
 
     try {
-      // Prefer Gateway HTTP API (~0.2s) over CLI (~12s)
       let sessions = [];
       try {
         sessions = await apiListSessions();
       } catch (apiErr) {
-        // Fallback to CLI if API is unavailable
-        console.warn("[Sessions Cache] API failed, falling back to CLI:", apiErr.message);
-        const output = await runOpenClawAsync("sessions --json 2>/dev/null");
-        const jsonStr = extractJSON(output);
-        if (jsonStr) {
-          const data = JSON.parse(jsonStr);
-          sessions = data.sessions || [];
-        }
+        console.error("[Sessions Cache] API failed:", apiErr.message);
       }
 
       // Map sessions (same logic as getSessions)

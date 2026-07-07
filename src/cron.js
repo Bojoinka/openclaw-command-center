@@ -1,159 +1,106 @@
-const fs = require("fs");
+/**
+ * Cron job data via direct SQLite read.
+ *
+ * The Gateway's /tools/invoke endpoint blocks the `cron` tool,
+ * so we read the cron_jobs table from the gateway's SQLite state
+ * database directly.
+ */
+
 const path = require("path");
 
-// Convert cron expression to human-readable text
-function cronToHuman(expr) {
-  if (!expr || expr === "—") return null;
-
-  const parts = expr.split(" ");
-  if (parts.length < 5) return null;
-
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-
-  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-  // Helper to format time
-  function formatTime(h, m) {
-    const hNum = parseInt(h, 10);
-    const mNum = parseInt(m, 10);
-    if (isNaN(hNum)) return null;
-    const ampm = hNum >= 12 ? "pm" : "am";
-    const h12 = hNum === 0 ? 12 : hNum > 12 ? hNum - 12 : hNum;
-    return mNum === 0 ? `${h12}${ampm}` : `${h12}:${mNum.toString().padStart(2, "0")}${ampm}`;
-  }
-
-  // Every minute
-  if (minute === "*" && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
-    return "Every minute";
-  }
-
-  // Every X minutes
-  if (minute.startsWith("*/")) {
-    const interval = minute.slice(2);
-    return `Every ${interval} minutes`;
-  }
-
-  // Every X hours (*/N in hour field)
-  if (hour.startsWith("*/")) {
-    const interval = hour.slice(2);
-    const minStr = minute === "0" ? "" : `:${minute.padStart(2, "0")}`;
-    return `Every ${interval} hours${minStr ? " at " + minStr : ""}`;
-  }
-
-  // Every hour at specific minute
-  if (minute !== "*" && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
-    return `Hourly at :${minute.padStart(2, "0")}`;
-  }
-
-  // Build time string for specific hour
-  let timeStr = "";
-  if (minute !== "*" && hour !== "*" && !hour.startsWith("*/")) {
-    timeStr = formatTime(hour, minute);
-  }
-
-  // Daily at specific time
-  if (timeStr && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
-    return `Daily at ${timeStr}`;
-  }
-
-  // Weekdays (Mon-Fri) - check before generic day of week
-  if ((dayOfWeek === "1-5" || dayOfWeek === "MON-FRI") && dayOfMonth === "*" && month === "*") {
-    return timeStr ? `Weekdays at ${timeStr}` : "Weekdays";
-  }
-
-  // Weekends - check before generic day of week
-  if ((dayOfWeek === "0,6" || dayOfWeek === "6,0") && dayOfMonth === "*" && month === "*") {
-    return timeStr ? `Weekends at ${timeStr}` : "Weekends";
-  }
-
-  // Specific day of week
-  if (dayOfMonth === "*" && month === "*" && dayOfWeek !== "*") {
-    const days = dayOfWeek.split(",").map((d) => {
-      const num = parseInt(d, 10);
-      return dayNames[num] || d;
-    });
-    const dayStr = days.length === 1 ? days[0] : days.join(", ");
-    return timeStr ? `${dayStr} at ${timeStr}` : `Every ${dayStr}`;
-  }
-
-  // Specific day of month
-  if (dayOfMonth !== "*" && month === "*" && dayOfWeek === "*") {
-    const day = parseInt(dayOfMonth, 10);
-    const suffix =
-      day === 1 || day === 21 || day === 31
-        ? "st"
-        : day === 2 || day === 22
-          ? "nd"
-          : day === 3 || day === 23
-            ? "rd"
-            : "th";
-    return timeStr ? `${day}${suffix} of month at ${timeStr}` : `${day}${suffix} of every month`;
-  }
-
-  // Fallback: just show the time if we have it
-  if (timeStr) {
-    return `At ${timeStr}`;
-  }
-
-  return expr; // Return original as fallback
+/**
+ * Get the path to the OpenClaw state database.
+ */
+function getStateDbPath() {
+  const home = process.env.HOME || "/home/odin";
+  const profile = process.env.OPENCLAW_PROFILE;
+  const openclawDir = profile
+    ? path.join(home, `.openclaw-${profile}`)
+    : path.join(home, ".openclaw");
+  return path.join(openclawDir, "state", "openclaw.sqlite");
 }
 
-// Get cron jobs - reads directly from file for speed (CLI takes 11s+)
-function getCronJobs(getOpenClawDir) {
+/**
+ * Read cron jobs from the SQLite state database using python3.
+ * (Node doesn't have a built-in SQLite driver, and better-sqlite3
+ * may not be installed.)
+ */
+function readCronJobsPython(dbPath) {
+  const { execFileSync } = require("child_process");
+  const script = `
+import sqlite3, json, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.row_factory = sqlite3.Row
+rows = conn.execute('''
+  SELECT job_id, name, agent_id, enabled, schedule_kind, schedule_expr,
+         schedule_tz, next_run_at_ms, last_run_status, last_run_at_ms,
+         last_error, last_duration_ms, description, payload_kind, session_target
+  FROM cron_jobs ORDER BY agent_id, name
+''').fetchall()
+jobs = [dict(r) for r in rows]
+print(json.dumps(jobs))
+conn.close()
+`;
+  const output = execFileSync("python3", ["-c", script, dbPath], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  return JSON.parse(output);
+}
+
+// Cache
+let cronCache = { data: null, timestamp: 0 };
+const CRON_CACHE_TTL_MS = 30000;
+
+/**
+ * Get cron jobs. Returns cached data, refreshes in background if stale.
+ */
+function getCronJobs() {
+  const now = Date.now();
+
+  if (cronCache.data && now - cronCache.timestamp < CRON_CACHE_TTL_MS) {
+    return cronCache.data;
+  }
+
   try {
-    const cronPath = path.join(getOpenClawDir(), "cron", "jobs.json");
-    if (fs.existsSync(cronPath)) {
-      const data = JSON.parse(fs.readFileSync(cronPath, "utf8"));
-      return (data.jobs || []).map((j) => {
-        // Parse schedule
-        let scheduleStr = "—";
-        let scheduleHuman = null;
-        if (j.schedule) {
-          if (j.schedule.kind === "cron" && j.schedule.expr) {
-            scheduleStr = j.schedule.expr;
-            scheduleHuman = cronToHuman(j.schedule.expr);
-          } else if (j.schedule.kind === "once") {
-            scheduleStr = "once";
-            scheduleHuman = "One-time";
-          }
-        }
+    const dbPath = getStateDbPath();
+    const rawJobs = readCronJobsPython(dbPath);
 
-        // Format next run
-        let nextRunStr = "—";
-        if (j.state?.nextRunAtMs) {
-          const next = new Date(j.state.nextRunAtMs);
-          const now = new Date();
-          const diffMs = next - now;
-          const diffMins = Math.round(diffMs / 60000);
-          if (diffMins < 0) {
-            nextRunStr = "overdue";
-          } else if (diffMins < 60) {
-            nextRunStr = `${diffMins}m`;
-          } else if (diffMins < 1440) {
-            nextRunStr = `${Math.round(diffMins / 60)}h`;
-          } else {
-            nextRunStr = `${Math.round(diffMins / 1440)}d`;
-          }
-        }
+    const jobs = rawJobs.map((j) => ({
+      id: j.job_id,
+      name: j.name || "Unnamed",
+      agentId: j.agent_id || "main",
+      enabled: !!j.enabled,
+      scheduleKind: j.schedule_kind,
+      scheduleExpr: j.schedule_expr,
+      scheduleTz: j.schedule_tz,
+      nextRunAtMs: j.next_run_at_ms,
+      lastRunStatus: j.last_run_status,
+      lastRunAtMs: j.last_run_at_ms,
+      lastError: j.last_error,
+      lastDurationMs: j.last_duration_ms,
+      description: j.description,
+      payloadKind: j.payload_kind,
+      sessionTarget: j.session_target,
+    }));
 
-        return {
-          id: j.id,
-          name: j.name || j.id.slice(0, 8),
-          schedule: scheduleStr,
-          scheduleHuman: scheduleHuman,
-          nextRun: nextRunStr,
-          enabled: j.enabled !== false,
-          lastStatus: j.state?.lastStatus,
-        };
-      });
-    }
+    const result = {
+      jobs,
+      total: jobs.length,
+      enabled: jobs.filter((j) => j.enabled).length,
+      errored: jobs.filter((j) => j.lastRunStatus === "error").length,
+    };
+
+    cronCache.data = result;
+    cronCache.timestamp = now;
+    console.log(
+      `[Cron] Refreshed: ${result.total} jobs (${result.enabled} enabled, ${result.errored} errored)`,
+    );
+    return result;
   } catch (e) {
-    console.error("Failed to get cron:", e.message);
+    console.error("[Cron] Failed to read SQLite:", e.message);
+    return cronCache.data || { jobs: [], total: 0, enabled: 0, errored: 0 };
   }
-  return [];
 }
 
-module.exports = {
-  cronToHuman,
-  getCronJobs,
-};
+module.exports = { getCronJobs, getStateDbPath };
