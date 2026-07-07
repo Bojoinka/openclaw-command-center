@@ -82,13 +82,13 @@
           <div class="stat-value" id="active-sessions">-</div>
           <div class="stat-label" data-i18n="stats.active15m">Recently active (15m)</div>
         </div>
-        <div class="stat" title="Tokens used today across all agents">
+        <div class="stat" title="Actual API spend yesterday (Anthropic + OpenAI)">
           <div class="stat-value" id="topbar-api-cost">-</div>
-          <div class="stat-label">Tokens (Today) 🧠</div>
+          <div class="stat-label">API Cost (Yesterday) 💰</div>
         </div>
-        <div class="stat" title="Total tokens across all sessions">
+        <div class="stat" title="Projected monthly spend based on yesterday">
           <div class="stat-value" id="topbar-monthly-est">-</div>
-          <div class="stat-label">Tokens (All-Time) 📊</div>
+          <div class="stat-label">Est. Monthly 📈</div>
         </div>
         <div class="stat" title="Main session capacity">
           <div class="stat-value" id="main-capacity">-</div>
@@ -4640,14 +4640,25 @@
           const alltimeSessionsEl = document.getElementById('instance-alltime-sessions');
           if (alltimeSessionsEl) alltimeSessionsEl.textContent = String(data.totalSessions || 0);
 
-          // Top bar — show today's token count
-          const topCost = document.getElementById('topbar-api-cost');
-          if (topCost) topCost.textContent = formatTokenCount(today.totalTokens || 0);
-          const topMonthly = document.getElementById('topbar-monthly-est');
-          if (topMonthly) topMonthly.textContent = formatTokenCount(data.totalTokens || 0);
-
         } catch (e) {
           console.error('[Instance Usage] Fetch error:', e.message);
+        }
+      }
+
+      // ── Top Bar API Costs ───────────────────────────────────────────────
+      async function fetchTopBarCosts() {
+        try {
+          const res = await fetch('/api/api-costs?days=1');
+          const data = await res.json();
+          if (data.error) return;
+
+          const combined = data.combined_cost || 0;
+          const topCost = document.getElementById('topbar-api-cost');
+          if (topCost) topCost.textContent = '$' + combined.toFixed(2);
+          const topMonthly = document.getElementById('topbar-monthly-est');
+          if (topMonthly) topMonthly.textContent = '$' + (combined * 30).toFixed(0);
+        } catch (e) {
+          console.error('[Top Bar Costs] Fetch error:', e.message);
         }
       }
 
@@ -4678,8 +4689,10 @@
 
         // Fetch real API costs (Anthropic + OpenAI)
         fetchInstanceUsage();
+        fetchTopBarCosts();
         // Refresh costs every 10 minutes
         setInterval(fetchInstanceUsage, 60000);
+        setInterval(fetchTopBarCosts, 600000);
 
         // Apply privacy settings on load
         updateHostnameDisplay();
