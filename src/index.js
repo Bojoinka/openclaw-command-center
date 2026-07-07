@@ -549,6 +549,26 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: "Method not allowed" }));
     }
     return;
+  } else if (pathname === "/api/api-costs") {
+    const days = parseInt(query.get("days") || "1", 10);
+    const { execFile } = require("child_process");
+    const script = path.join(PATHS.skills, "api-costs", "scripts", "api-costs.js");
+    execFile("node", [script, String(days)], { encoding: "utf8", timeout: 15000 }, (err, stdout) => {
+      if (err) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+        return;
+      }
+      try {
+        const data = JSON.parse(stdout);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data, null, 2));
+      } catch (e) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Failed to parse api-costs output" }));
+      }
+    });
+    return;
   } else if (pathname === "/api/llm-usage") {
     const usage = getLlmUsage(PATHS.state);
     res.writeHead(200, { "Content-Type": "application/json" });
