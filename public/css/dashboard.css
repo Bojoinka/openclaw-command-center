@@ -1951,3 +1951,34 @@ main {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+.quick-action-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.quick-action-result {
+  font-size: 0.75rem;
+  padding: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
+  opacity: 0;
+  white-space: pre-wrap;
+  line-height: 1.4;
+  border-radius: 0 0 8px 8px;
+  margin-top: -2px;
+}
+.quick-action-result.visible {
+  max-height: 200px;
+  padding: 8px 12px;
+  opacity: 1;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-top: none;
+}
+.quick-action-result.success {
+  color: var(--green, #4ade80);
+}
+.quick-action-result.error {
+  color: var(--red, #f87171);
+}

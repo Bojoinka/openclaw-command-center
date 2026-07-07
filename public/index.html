@@ -325,25 +325,34 @@
         <!-- Quick Actions -->
         <div class="quick-actions">
           <div class="quick-actions-title" data-i18n="quickActions.title">⚡ Quick Actions</div>
-          <button
-            class="quick-action-btn"
-            id="btn-health-check"
-            onclick="runHealthCheck()"
-            data-i18n="quickActions.healthCheck"
-          >
-            <span class="btn-icon">🔍</span> Health Check
-          </button>
-          <button
-            class="quick-action-btn"
-            id="btn-gateway-status"
-            onclick="getGatewayStatus()"
-            data-i18n="quickActions.gatewayStatus"
-          >
-            <span class="btn-icon">🚪</span> Gateway Status
-          </button>
-          <button class="quick-action-btn" id="btn-clean-stale" onclick="pruneStalesSessions()">
-            <span class="btn-icon">🧹</span> <span data-i18n="quickActions.cleanStale">Clean Stale Sessions</span>
-          </button>
+          <div class="quick-action-wrapper">
+            <button
+              class="quick-action-btn"
+              id="btn-health-check"
+              onclick="runHealthCheck()"
+              data-i18n="quickActions.healthCheck"
+            >
+              <span class="btn-icon">🔍</span> Health Check
+            </button>
+            <div class="quick-action-result" id="result-health-check"></div>
+          </div>
+          <div class="quick-action-wrapper">
+            <button
+              class="quick-action-btn"
+              id="btn-gateway-status"
+              onclick="getGatewayStatus()"
+              data-i18n="quickActions.gatewayStatus"
+            >
+              <span class="btn-icon">🚪</span> Gateway Status
+            </button>
+            <div class="quick-action-result" id="result-gateway-status"></div>
+          </div>
+          <div class="quick-action-wrapper">
+            <button class="quick-action-btn" id="btn-clean-stale" onclick="pruneStalesSessions()">
+              <span class="btn-icon">🧹</span> <span data-i18n="quickActions.cleanStale">Clean Stale Sessions</span>
+            </button>
+            <div class="quick-action-result" id="result-clean-stale"></div>
+          </div>
         </div>
 
         <!-- Sub-agent Status Panel -->
@@ -4463,6 +4472,18 @@
         }
       }
 
+      function showInlineResult(resultId, text, type) {
+        const el = document.getElementById(resultId);
+        if (!el) return;
+        el.textContent = text;
+        el.className = 'quick-action-result visible ' + type;
+        // Auto-hide after 15 seconds
+        clearTimeout(el._hideTimer);
+        el._hideTimer = setTimeout(() => {
+          el.className = 'quick-action-result';
+        }, 15000);
+      }
+
       async function runHealthCheck() {
         setBtnLoading('btn-health-check', true);
         try {
@@ -4470,12 +4491,12 @@
           const data = await response.json();
 
           if (data.success) {
-            showToast("✅ Health check passed", "success");
+            showInlineResult('result-health-check', '✅ ' + data.output, 'success');
           } else {
-            showToast("❌ Health check failed: " + (data.error || data.output), "error");
+            showInlineResult('result-health-check', '❌ ' + (data.error || data.output), 'error');
           }
         } catch (e) {
-          showToast("❌ Health check error: " + e.message, "error");
+          showInlineResult('result-health-check', '❌ ' + e.message, 'error');
         } finally {
           setBtnLoading('btn-health-check', false);
         }
@@ -4488,12 +4509,12 @@
           const data = await response.json();
 
           if (data.success) {
-            showToast("🚪 Gateway: " + data.output, "success");
+            showInlineResult('result-gateway-status', '✅ ' + data.output, 'success');
           } else {
-            showToast("❌ Gateway status failed: " + (data.error || data.output), "error");
+            showInlineResult('result-gateway-status', '❌ ' + (data.error || data.output), 'error');
           }
         } catch (e) {
-          showToast("❌ Gateway error: " + e.message, "error");
+          showInlineResult('result-gateway-status', '❌ ' + e.message, 'error');
         } finally {
           setBtnLoading('btn-gateway-status', false);
         }
@@ -4506,12 +4527,12 @@
           const data = await response.json();
 
           if (data.success) {
-            showToast("🧹 " + data.output, "success");
+            showInlineResult('result-clean-stale', '🧹 ' + data.output, 'success');
           } else {
-            showToast("❌ Cleanup failed: " + (data.error || data.output), "error");
+            showInlineResult('result-clean-stale', '❌ ' + (data.error || data.output), 'error');
           }
         } catch (e) {
-          showToast("❌ Cleanup error: " + e.message, "error");
+          showInlineResult('result-clean-stale', '❌ ' + e.message, 'error');
         } finally {
           setBtnLoading('btn-clean-stale', false);
         }
