@@ -82,52 +82,13 @@
           <div class="stat-value" id="active-sessions">-</div>
           <div class="stat-label" data-i18n="stats.active15m">Recently active (15m)</div>
         </div>
-        <div
-          class="stat"
-          title="Click for cost breakdown"
-          onclick="openCostModal()"
-          style="cursor: pointer"
-        >
-          <div class="stat-value" id="est-cost">-</div>
-          <div class="stat-label" data-i18n="stats.estCost24h">Est. Cost (24h) 📊</div>
+        <div class="stat" title="Actual API spend yesterday (Anthropic + OpenAI)">
+          <div class="stat-value" id="topbar-api-cost">-</div>
+          <div class="stat-label">API Cost (Yesterday) 💰</div>
         </div>
-        <div
-          class="stat"
-          title="Click for cost breakdown"
-          id="savings-stat"
-          style="display: none; cursor: pointer"
-        >
-          <div
-            class="stat-value"
-            id="est-savings"
-            style="color: var(--green)"
-            onclick="openCostModal()"
-          >
-            -
-          </div>
-          <div class="stat-label" style="display: flex; align-items: center; gap: 4px">
-            <span onclick="openCostModal()" data-i18n="stats.estMonthlySavings"
-              >Est. Monthly Savings</span
-            >
-            <select
-              id="savings-window-select"
-              style="
-                font-size: 0.7rem;
-                padding: 1px 2px;
-                background: var(--card-bg);
-                color: var(--text);
-                border: 1px solid var(--border);
-                border-radius: 3px;
-                cursor: pointer;
-              "
-              onclick="event.stopPropagation()"
-            >
-              <option value="24h">24h</option>
-              <option value="3dma">3dma</option>
-              <option value="7dma" selected>7dma</option>
-            </select>
-            💰
-          </div>
+        <div class="stat" title="Projected monthly spend based on yesterday">
+          <div class="stat-value" id="topbar-monthly-est">-</div>
+          <div class="stat-label">Est. Monthly 📈</div>
         </div>
         <div class="stat" title="Main session capacity">
           <div class="stat-value" id="main-capacity">-</div>
@@ -4519,7 +4480,7 @@
 
       async function pruneStalesSessions() {
         try {
-          const response = await fetch("/api/action?action=prune-stale");
+          const response = await fetch("/api/action?action=clear-stale-sessions");
           const data = await response.json();
 
           if (data.success) {
@@ -4595,8 +4556,15 @@
           }
 
           // Combined
+          const combined = data.combined_cost || 0;
           const cEl = document.getElementById('combined-total-cost');
-          if (cEl) cEl.textContent = '$' + (data.combined_cost || 0).toFixed(2);
+          if (cEl) cEl.textContent = '$' + combined.toFixed(2);
+
+          // Top bar stats
+          const topCost = document.getElementById('topbar-api-cost');
+          if (topCost) topCost.textContent = '$' + combined.toFixed(2);
+          const topMonthly = document.getElementById('topbar-monthly-est');
+          if (topMonthly) topMonthly.textContent = '$' + (combined * 30).toFixed(0);
 
         } catch (e) {
           console.error('[API Costs] Fetch error:', e.message);
