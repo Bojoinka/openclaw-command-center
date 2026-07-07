@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { detectTopics } = require("./topics");
+const { listSessions: apiListSessions } = require("./gateway-api");
 
 // Channel ID to name mapping (auto-populated from Slack)
 const CHANNEL_MAP = {
@@ -299,25 +300,33 @@ function createSessionsModule(deps) {
     sessionsCache.refreshing = true;
 
     try {
-      const output = await runOpenClawAsync("sessions --json 2>/dev/null");
-      const jsonStr = extractJSON(output);
-      if (jsonStr) {
-        const data = JSON.parse(jsonStr);
-        const sessions = data.sessions || [];
-
-        // Map sessions (same logic as getSessions)
-        const mapped = sessions.map((s) => mapSession(s));
-        const withOriginator = mapped.filter((s) => s.originator != null);
-
-        sessionsCache = {
-          sessions: mapped,
-          timestamp: Date.now(),
-          refreshing: false,
-        };
-        console.log(
-          `[Sessions Cache] Refreshed: ${mapped.length} sessions (${withOriginator.length} with originator)`,
-        );
+      // Prefer Gateway HTTP API (~0.2s) over CLI (~12s)
+      let sessions = [];
+      try {
+        sessions = await apiListSessions();
+      } catch (apiErr) {
+        // Fallback to CLI if API is unavailable
+        console.warn("[Sessions Cache] API failed, falling back to CLI:", apiErr.message);
+        const output = await runOpenClawAsync("sessions --json 2>/dev/null");
+        const jsonStr = extractJSON(output);
+        if (jsonStr) {
+          const data = JSON.parse(jsonStr);
+          sessions = data.sessions || [];
+        }
       }
+
+      // Map sessions (same logic as getSessions)
+      const mapped = sessions.map((s) => mapSession(s));
+      const withOriginator = mapped.filter((s) => s.originator != null);
+
+      sessionsCache = {
+        sessions: mapped,
+        timestamp: Date.now(),
+        refreshing: false,
+      };
+      console.log(
+        `[Sessions Cache] Refreshed: ${mapped.length} sessions (${withOriginator.length} with originator)`,
+      );
     } catch (e) {
       console.error("[Sessions Cache] Refresh error:", e.message);
     }
@@ -341,32 +350,17 @@ function createSessionsModule(deps) {
     const limit = Object.prototype.hasOwnProperty.call(options, "limit") ? options.limit : 20;
     const returnCount = options.returnCount || false;
 
-    // For "get all" requests (limit: null), use the async cache
-    // This is the expensive operation that was blocking
-    if (limit === null) {
-      const cached = getSessionsCached();
-      const totalCount = cached.length;
-      return returnCount ? { sessions: cached, totalCount } : cached;
+    // Always use the async cache — it's populated via Gateway API (~0.2s)
+    // The old sync CLI path took ~12s and blocked the event loop
+    const cached = getSessionsCached();
+    let sessions = cached;
+    const totalCount = sessions.length;
+
+    if (limit != null) {
+      sessions = sessions.slice(0, limit);
     }
 
-    // For limited requests, can still use sync (fast enough)
-    try {
-      const output = runOpenClaw("sessions --json 2>/dev/null");
-      const jsonStr = extractJSON(output);
-      if (jsonStr) {
-        const data = JSON.parse(jsonStr);
-        const totalCount = data.count || data.sessions?.length || 0;
-        let sessions = data.sessions || [];
-        if (limit != null) {
-          sessions = sessions.slice(0, limit);
-        }
-        const mapped = sessions.map((s) => mapSession(s));
-        return returnCount ? { sessions: mapped, totalCount } : mapped;
-      }
-    } catch (e) {
-      console.error("Failed to get sessions:", e.message);
-    }
-    return returnCount ? { sessions: [], totalCount: 0 } : [];
+    return returnCount ? { sessions, totalCount } : sessions;
   }
 
   // Read session transcript from JSONL file
@@ -396,14 +390,23 @@ function createSessionsModule(deps) {
   // Get detailed session info
   function getSessionDetail(sessionKey) {
     try {
-      // Get basic session info
-      const listOutput = runOpenClaw("sessions --json 2>/dev/null");
-      let sessionInfo = null;
-      const jsonStr = extractJSON(listOutput);
-      if (jsonStr) {
-        const data = JSON.parse(jsonStr);
-        sessionInfo = data.sessions?.find((s) => s.key === sessionKey);
-      }
+      // Get session info from cache (populated via Gateway API)
+      const cached = getSessionsCached();
+      // Find the raw session data — we need to search the original API data
+      // The cache contains mapped sessions with sessionKey
+      const cachedSession = cached.find((s) => s.sessionKey === sessionKey);
+      let sessionInfo = cachedSession
+        ? {
+            key: cachedSession.sessionKey,
+            sessionId: cachedSession.sessionId,
+            kind: cachedSession.kind,
+            model: cachedSession.model,
+            totalTokens: cachedSession.tokens,
+            ageMs: (cachedSession.minutesAgo || 0) * 60000,
+            groupChannel: cachedSession.groupChannel,
+            displayName: cachedSession.displayName,
+          }
+        : null;
 
       if (!sessionInfo) {
         return { error: "Session not found" };

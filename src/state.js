@@ -3,6 +3,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { formatBytes, formatTimeAgo } = require("./utils");
+const { listSessions: apiListSessions } = require("./gateway-api");
 
 /**
  * Creates a state management module with injected dependencies.
@@ -60,15 +61,8 @@ function createStateModule(deps) {
       if (match) uptime = match[1].trim();
     } catch (e) {}
 
-    let gateway = "Unknown";
-    try {
-      const status = runOpenClaw("gateway status 2>/dev/null");
-      if (status && status.includes("running")) {
-        gateway = "Running";
-      } else if (status && status.includes("stopped")) {
-        gateway = "Stopped";
-      }
-    } catch (e) {}
+    // Gateway is running if we can reach this code (served by the gateway process)
+    let gateway = "Running";
 
     return {
       hostname,
@@ -134,96 +128,25 @@ function createStateModule(deps) {
       // Fall back to defaults
     }
 
-    // Try to get active counts from sessions (preferred - has full session keys)
+    // Use sessions from the async cache (populated via Gateway API)
+    // This avoids both CLI calls and filesystem scanning
     try {
-      const output = runOpenClaw("sessions --json 2>/dev/null");
-      const jsonStr = extractJSON(output);
-      if (jsonStr) {
-        const data = JSON.parse(jsonStr);
-        const sessions = data.sessions || [];
-        const fiveMinMs = 5 * 60 * 1000;
+      const allSessions = getSessions({ limit: null });
+      const fiveMinMs = 5 * 60 * 1000;
 
-        for (const s of sessions) {
-          // Only count sessions active in last 5 minutes
-          if (s.ageMs > fiveMinMs) continue;
+      for (const s of allSessions) {
+        const ageMs = (s.minutesAgo || Infinity) * 60000;
+        if (ageMs > fiveMinMs) continue;
 
-          const key = s.key || "";
-          // Session key patterns:
-          //   agent:main:slack:... = main (human-initiated)
-          //   agent:main:telegram:... = main
-          //   agent:main:discord:... = main
-          //   agent:main:subagent:... = subagent (spawned task)
-          //   agent:main:cron:... = cron job (count as subagent)
-          if (key.includes(":subagent:") || key.includes(":cron:")) {
-            result.subagent.active++;
-          } else {
-            result.main.active++;
-          }
+        const key = s.sessionKey || "";
+        if (key.includes(":subagent:") || key.includes(":cron:")) {
+          result.subagent.active++;
+        } else {
+          result.main.active++;
         }
-        return result;
       }
     } catch (e) {
-      console.error("Failed to get capacity from sessions, falling back to filesystem:", e.message);
-    }
-
-    // Count active sessions from filesystem (workaround for CLI returning styled text)
-    // Sessions active in last 5 minutes are considered "active"
-    try {
-      const sessionsDir = path.join(openclawDir, "agents", "main", "sessions");
-      if (fs.existsSync(sessionsDir)) {
-        const fiveMinAgo = Date.now() - 5 * 60 * 1000;
-        const files = fs.readdirSync(sessionsDir).filter((f) => f.endsWith(".jsonl"));
-
-        let mainActive = 0;
-        let subActive = 0;
-
-        for (const file of files) {
-          try {
-            const filePath = path.join(sessionsDir, file);
-            const stat = fs.statSync(filePath);
-
-            // Only count files modified in last 5 minutes as "active"
-            if (stat.mtimeMs < fiveMinAgo) continue;
-
-            // Read the first line to get the session key
-            // Session keys indicate session type:
-            //   agent:main:slack:... = main (human-initiated slack)
-            //   agent:main:telegram:... = main (human-initiated telegram)
-            //   agent:main:discord:... = main (human-initiated discord)
-            //   agent:main:subagent:... = subagent (spawned autonomous task)
-            //   agent:main:cron:... = cron job (automated, count as subagent)
-            // Filenames are just UUIDs, so we must read the content
-            let isSubagent = false;
-            try {
-              const fd = fs.openSync(filePath, "r");
-              const buffer = Buffer.alloc(512); // First 512 bytes is enough for the first line
-              fs.readSync(fd, buffer, 0, 512, 0);
-              fs.closeSync(fd);
-              const firstLine = buffer.toString("utf8").split("\n")[0];
-              const parsed = JSON.parse(firstLine);
-              const key = parsed.key || parsed.id || "";
-              // Subagent and cron sessions are not human-initiated
-              isSubagent = key.includes(":subagent:") || key.includes(":cron:");
-            } catch (parseErr) {
-              // If we can't parse, fall back to checking filename (legacy)
-              isSubagent = file.includes("subagent");
-            }
-
-            if (isSubagent) {
-              subActive++;
-            } else {
-              mainActive++;
-            }
-          } catch (e) {
-            // Skip unreadable files
-          }
-        }
-
-        result.main.active = mainActive;
-        result.subagent.active = subActive;
-      }
-    } catch (e) {
-      console.error("Failed to count active sessions from filesystem:", e.message);
+      console.error("Failed to get capacity from sessions:", e.message);
     }
 
     return result;
@@ -524,31 +447,27 @@ function createStateModule(deps) {
     }
   }
 
-  // Get detailed sub-agent status
+  // Get detailed sub-agent status (uses cached sessions from Gateway API)
   function getSubagentStatus() {
     const subagents = [];
     try {
-      const output = runOpenClaw("sessions --json 2>/dev/null");
-      const jsonStr = extractJSON(output);
-      if (jsonStr) {
-        const data = JSON.parse(jsonStr);
-        const subagentSessions = (data.sessions || []).filter(
-          (s) => s.key && s.key.includes(":subagent:"),
-        );
+      const allSessions = getSessions({ limit: null });
+      const subagentSessions = allSessions.filter(
+        (s) => s.sessionKey && s.sessionKey.includes(":subagent:"),
+      );
 
-        for (const s of subagentSessions) {
-          const ageMs = s.ageMs || Infinity;
-          const isActive = ageMs < 5 * 60 * 1000; // Active if < 5 min
-          const isRecent = ageMs < 30 * 60 * 1000; // Recent if < 30 min
+      for (const s of subagentSessions) {
+        const ageMs = (s.minutesAgo || Infinity) * 60000;
+        const isActive = ageMs < 5 * 60 * 1000;
+        const isRecent = ageMs < 30 * 60 * 1000;
 
-          // Extract subagent ID from key
-          const match = s.key.match(/:subagent:([a-f0-9-]+)$/);
-          const subagentId = match ? match[1] : s.sessionId;
-          const shortId = subagentId.slice(0, 8);
+        const match = s.sessionKey.match(/:subagent:([a-f0-9-]+)$/);
+        const subagentId = match ? match[1] : s.sessionId;
+        const shortId = subagentId.slice(0, 8);
 
           // Try to get task info from transcript
-          let taskSummary = "Unknown task";
-          let label = null;
+          let taskSummary = s.label || s.topic || "Unknown task";
+          let label = s.label || null;
           const transcript = readTranscript(s.sessionId);
 
           // Look for task description in first 15 messages (subagent context can be deep)
@@ -609,7 +528,7 @@ function createStateModule(deps) {
             sessionId: s.sessionId,
             label: label || shortId,
             task: taskSummary,
-            model: s.model?.replace("anthropic/", "") || "unknown",
+            model: (s.model || "unknown").replace("anthropic/", ""),
             status: isActive ? "active" : isRecent ? "idle" : "stale",
             ageMs,
             ageFormatted:
@@ -619,10 +538,9 @@ function createStateModule(deps) {
                   ? `${Math.round(ageMs / 60000)}m ago`
                   : `${Math.round(ageMs / 3600000)}h ago`,
             messageCount,
-            tokens: s.totalTokens || 0,
+            tokens: s.tokens || 0,
           });
         }
-      }
     } catch (e) {
       console.error("Failed to get subagent status:", e.message);
     }

@@ -247,7 +247,7 @@ function handleApi(req, res) {
 // ============================================================================
 // HTTP SERVER
 // ============================================================================
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   // CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
 
@@ -370,7 +370,7 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ error: "Missing action parameter" }));
       return;
     }
-    const result = executeAction(action, { runOpenClaw, extractJSON, PORT });
+    const result = await executeAction(action, { runOpenClaw, extractJSON, PORT });
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(result, null, 2));
   } else if (pathname === "/api/events") {
@@ -611,7 +611,7 @@ const server = http.createServer((req, res) => {
 // ============================================================================
 // START SERVER
 // ============================================================================
-server.listen(PORT, () => {
+server.listen(PORT, "127.0.0.1", () => {
   const profile = process.env.OPENCLAW_PROFILE;
   console.log(`\u{1F99E} OpenClaw Command Center running at http://localhost:${PORT}`);
   if (profile) {
