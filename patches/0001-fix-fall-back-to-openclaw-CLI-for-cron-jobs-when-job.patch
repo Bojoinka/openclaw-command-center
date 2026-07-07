@@ -1,0 +1,107 @@
+From 81e217fda43318029e331245294fb06c81d0ee44 Mon Sep 17 00:00:00 2001
+From: John Poole <1694343+Bojoinka@users.noreply.github.com>
+Date: Tue, 7 Jul 2026 15:28:11 -0400
+Subject: [PATCH] fix: fall back to openclaw CLI for cron jobs when jobs.json
+ is missing
+
+OpenClaw migrated cron storage from jobs.json to SQLite. This patch
+adds a CLI fallback (openclaw cron list --json) in getCronJobs2() so
+the dashboard still shows all cron jobs on post-migration installs.
+
+The legacy JSON path is tried first for backward compatibility.
+---
+ UNINSTALL.md  | 48 ++++++++++++++++++++++++++++++++++++++++++++++++
+ lib/server.js | 21 ++++++++++++++++++++-
+ 2 files changed, 68 insertions(+), 1 deletion(-)
+ create mode 100644 UNINSTALL.md
+
+diff --git a/UNINSTALL.md b/UNINSTALL.md
+new file mode 100644
+index 0000000..e72e5fb
+--- /dev/null
++++ b/UNINSTALL.md
+@@ -0,0 +1,48 @@
++# Command Center — Uninstall Guide
++
++Installed: 2026-07-07 by Odin
++Source: https://github.com/jontsai/openclaw-command-center
++Version: 1.4.1
++
++## What was installed
++
++| Item | Location | Notes |
++|------|----------|-------|
++| Git clone | `/home/odin/.openclaw/workspace/command-center/` | 6.7MB, zero npm deps |
++| Data dir (auto-created) | `/home/odin/.openclaw/command-center/data/` | Copied AGENTS.md, operators.json.example, privacy-settings.json.example |
++| Tailscale serve | `https://asguard.tail64eec3.ts.net:3333` → `http://127.0.0.1:3333` | HTTPS proxy |
++
++## No system-level changes
++
++- No npm global installs
++- No systemd services
++- No PM2 processes
++- No crontab entries
++- No modifications to openclaw.json or any existing config
++
++## To stop the server
++
++```bash
++# Find and kill the node process
++pkill -f "node lib/server.js" 
++# Or if you have the PID:
++kill <pid>
++```
++
++## To fully uninstall
++
++```bash
++# 1. Stop the server
++pkill -f "command-center/lib/server.js"
++
++# 2. Remove Tailscale serve route
++tailscale serve --https=3333 off
++
++# 3. Remove the cloned repo
++rm -rf /home/odin/.openclaw/workspace/command-center/
++
++# 4. Remove the auto-created data directory
++rm -rf /home/odin/.openclaw/command-center/
++
++# Done — zero traces left
++```
+diff --git a/lib/server.js b/lib/server.js
+index 717d8dd..ce95136 100644
+--- a/lib/server.js
++++ b/lib/server.js
+@@ -1851,8 +1851,27 @@ var require_cron = __commonJS({
+     function getCronJobs2(getOpenClawDir2) {
+       try {
+         const cronPath = path2.join(getOpenClawDir2(), "cron", "jobs.json");
++        let data = null;
+         if (fs2.existsSync(cronPath)) {
+-          const data = JSON.parse(fs2.readFileSync(cronPath, "utf8"));
++          data = JSON.parse(fs2.readFileSync(cronPath, "utf8"));
++        }
++        if (!data || !data.jobs || data.jobs.length === 0) {
++          try {
++            const { execFileSync: execFileSync2 } = require("child_process");
++            const cliOut = execFileSync2("openclaw", ["cron", "list", "--json"], {
++              encoding: "utf8",
++              timeout: 5000,
++              stdio: ["pipe", "pipe", "pipe"]
++            });
++            const jsonStart = cliOut.search(/[\[{]/);
++            if (jsonStart !== -1) {
++              data = JSON.parse(cliOut.slice(jsonStart));
++            }
++          } catch (cliErr) {
++            console.error("[Cron] CLI fallback failed:", cliErr.message);
++          }
++        }
++        if (data && data.jobs) {
+           return (data.jobs || []).map((j) => {
+             let scheduleStr = "\u2014";
+             let scheduleHuman = null;
+-- 
+2.43.0
+

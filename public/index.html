@@ -317,84 +317,45 @@
           </div>
         </div>
 
-        <!-- Token Utilization Widget -->
+        <!-- API Spend Widget (replaces fuel gauges) -->
         <div class="utilization-section">
-          <div class="utilization-card" id="anthropic-quota">
+          <div class="utilization-card" id="anthropic-spend">
             <div class="utilization-header">
               <div class="utilization-icon anthropic">🧠</div>
               <div>
-                <div class="utilization-title">Claude (Anthropic)</div>
-                <div class="utilization-subtitle">API Usage</div>
-              </div>
-            </div>
-            <div>
-              <div class="quota-stats">
-                <span>Session Usage</span>
-                <span
-                  ><span class="quota-value" id="claude-compact-session-pct">-%</span> used</span
-                >
-              </div>
-              <div class="quota-bar">
-                <div
-                  class="quota-bar-fill low"
-                  id="claude-compact-session-bar"
-                  style="width: 0%"
-                ></div>
+                <div class="utilization-title">Anthropic</div>
+                <div class="utilization-subtitle">Yesterday's Spend</div>
               </div>
             </div>
             <div style="margin-top: 8px">
               <div class="quota-stats">
-                <span>Weekly Usage</span>
-                <span><span class="quota-value" id="claude-compact-week-pct">-%</span> used</span>
+                <span>Total</span>
+                <span><span class="quota-value" id="anthropic-total-cost" style="font-size: 1.1rem">—</span></span>
               </div>
-              <div class="quota-bar">
-                <div
-                  class="quota-bar-fill low"
-                  id="claude-compact-week-bar"
-                  style="width: 0%"
-                ></div>
-              </div>
+              <div id="anthropic-models" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-muted)"></div>
+              <div id="anthropic-workspaces" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--text-muted)"></div>
             </div>
           </div>
 
-          <div class="utilization-card" id="openai-quota">
+          <div class="utilization-card" id="openai-spend">
             <div class="utilization-header">
               <div class="utilization-icon openai">⚡</div>
               <div>
-                <div class="utilization-title">Codex (OpenAI)</div>
-                <div class="utilization-subtitle">ChatGPT Plus</div>
-              </div>
-            </div>
-            <div>
-              <div class="quota-stats">
-                <span>5-Hour Usage</span>
-                <span><span class="quota-value" id="codex-5h-pct">0%</span> used</span>
-              </div>
-              <div class="quota-bar">
-                <div class="quota-bar-fill low" id="codex-5h-bar" style="width: 0%"></div>
+                <div class="utilization-title">OpenAI</div>
+                <div class="utilization-subtitle">Yesterday's Spend</div>
               </div>
             </div>
             <div style="margin-top: 8px">
               <div class="quota-stats">
-                <span>Daily Usage</span>
-                <span><span class="quota-value" id="codex-day-pct">0%</span> used</span>
+                <span>Total</span>
+                <span><span class="quota-value" id="openai-total-cost" style="font-size: 1.1rem">—</span></span>
               </div>
-              <div class="quota-bar">
-                <div class="quota-bar-fill low" id="codex-day-bar" style="width: 0%"></div>
-              </div>
+              <div id="openai-models" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-muted)"></div>
             </div>
-            <div
-              style="
-                margin-top: 16px;
-                padding-top: 12px;
-                border-top: 1px solid var(--border);
-                font-size: 0.75rem;
-                color: var(--text-muted);
-              "
-            >
-              <div style="display: flex; justify-content: space-between">
-                <span>Tasks Today</span>
-                <span id="codex-tasks">0</span>
+            <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--text-muted)">
+              <div class="quota-stats">
+                <span>Combined Total</span>
+                <span><span class="quota-value" id="combined-total-cost" style="color: var(--text)">—</span></span>
               </div>
             </div>
           </div>
@@ -4589,6 +4550,59 @@
       }
 
       // Init - try SSE first, fall back to polling
+      // ── API Costs Widget ──────────────────────────────────────────────────────
+      async function fetchApiCosts() {
+        try {
+          const res = await fetch('/api/api-costs?days=1');
+          const data = await res.json();
+          if (data.error) { console.error('[API Costs]', data.error); return; }
+
+          // Anthropic
+          const aTotal = data.anthropic?.total_cost || 0;
+          const aEl = document.getElementById('anthropic-total-cost');
+          if (aEl) aEl.textContent = '$' + aTotal.toFixed(2);
+
+          const aModelsEl = document.getElementById('anthropic-models');
+          if (aModelsEl && data.anthropic?.models) {
+            aModelsEl.innerHTML = data.anthropic.models
+              .sort((a, b) => b.cost - a.cost)
+              .map(m => '<div style="display:flex;justify-content:space-between;margin-bottom:2px"><span>' + m.model + '</span><span>$' + m.cost.toFixed(2) + '</span></div>')
+              .join('');
+          }
+
+          const aWsEl = document.getElementById('anthropic-workspaces');
+          if (aWsEl && data.anthropic?.by_workspace) {
+            aWsEl.innerHTML = '<div style="margin-bottom:4px;color:var(--text-secondary);font-weight:500">By Workspace</div>' +
+              data.anthropic.by_workspace
+              .sort((a, b) => b.cost - a.cost)
+              .map(w => '<div style="display:flex;justify-content:space-between;margin-bottom:2px"><span>' + w.workspace + '</span><span>$' + w.cost.toFixed(2) + '</span></div>')
+              .join('');
+          }
+
+          // OpenAI
+          const oTotal = data.openai?.total_cost || 0;
+          const oEl = document.getElementById('openai-total-cost');
+          if (oEl) oEl.textContent = '$' + oTotal.toFixed(2);
+
+          const oModelsEl = document.getElementById('openai-models');
+          if (oModelsEl && data.openai?.models && data.openai.models.length > 0) {
+            oModelsEl.innerHTML = data.openai.models
+              .sort((a, b) => b.cost - a.cost)
+              .map(m => '<div style="display:flex;justify-content:space-between;margin-bottom:2px"><span>' + m.model + '</span><span>$' + m.cost.toFixed(2) + '</span></div>')
+              .join('');
+          } else if (oModelsEl) {
+            oModelsEl.innerHTML = '<div style="color:var(--text-muted)">No usage</div>';
+          }
+
+          // Combined
+          const cEl = document.getElementById('combined-total-cost');
+          if (cEl) cEl.textContent = '$' + (data.combined_cost || 0).toFixed(2);
+
+        } catch (e) {
+          console.error('[API Costs] Fetch error:', e.message);
+        }
+      }
+
       async function init() {
         // Load privacy settings from server first (before rendering any data)
         await loadPrivacyFromServer();
@@ -4613,6 +4627,11 @@
         // Fetch data after short delay to ensure DOM is ready
         // This fixes a race condition on initial page load
         setTimeout(fetchData, 100);
+
+        // Fetch real API costs (Anthropic + OpenAI)
+        fetchApiCosts();
+        // Refresh costs every 10 minutes
+        setInterval(fetchApiCosts, 600000);
 
         // Apply privacy settings on load
         updateHostnameDisplay();
