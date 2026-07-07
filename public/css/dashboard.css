@@ -1934,3 +1934,20 @@ main {
   background: var(--card-hover);
   border-color: var(--accent);
 }
+.quick-action-btn.loading {
+  opacity: 0.7;
+  pointer-events: none;
+  cursor: wait;
+}
+.quick-action-btn .btn-icon {
+  display: inline-block;
+  transition: none;
+}
+.quick-action-btn.loading .btn-icon {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

@@ -327,20 +327,22 @@
           <div class="quick-actions-title" data-i18n="quickActions.title">⚡ Quick Actions</div>
           <button
             class="quick-action-btn"
+            id="btn-health-check"
             onclick="runHealthCheck()"
             data-i18n="quickActions.healthCheck"
           >
-            🔍 Health Check
+            <span class="btn-icon">🔍</span> Health Check
           </button>
           <button
             class="quick-action-btn"
+            id="btn-gateway-status"
             onclick="getGatewayStatus()"
             data-i18n="quickActions.gatewayStatus"
           >
-            🚪 Gateway Status
+            <span class="btn-icon">🚪</span> Gateway Status
           </button>
-          <button class="quick-action-btn" onclick="pruneStalesSessions()">
-            <span data-i18n="quickActions.cleanStale">🧹 Clean Stale Sessions</span>
+          <button class="quick-action-btn" id="btn-clean-stale" onclick="pruneStalesSessions()">
+            <span class="btn-icon">🧹</span> <span data-i18n="quickActions.cleanStale">Clean Stale Sessions</span>
           </button>
         </div>
 
@@ -4448,7 +4450,21 @@
       }
 
       // Quick Actions
+      function setBtnLoading(btnId, loading) {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        const icon = btn.querySelector('.btn-icon');
+        if (loading) {
+          btn.classList.add('loading');
+          if (icon) { btn._origIcon = icon.textContent; icon.textContent = '⏳'; }
+        } else {
+          btn.classList.remove('loading');
+          if (icon && btn._origIcon) icon.textContent = btn._origIcon;
+        }
+      }
+
       async function runHealthCheck() {
+        setBtnLoading('btn-health-check', true);
         try {
           const response = await fetch("/api/action?action=health-check");
           const data = await response.json();
@@ -4460,10 +4476,13 @@
           }
         } catch (e) {
           showToast("❌ Health check error: " + e.message, "error");
+        } finally {
+          setBtnLoading('btn-health-check', false);
         }
       }
 
       async function getGatewayStatus() {
+        setBtnLoading('btn-gateway-status', true);
         try {
           const response = await fetch("/api/action?action=gateway-status");
           const data = await response.json();
@@ -4475,10 +4494,13 @@
           }
         } catch (e) {
           showToast("❌ Gateway error: " + e.message, "error");
+        } finally {
+          setBtnLoading('btn-gateway-status', false);
         }
       }
 
       async function pruneStalesSessions() {
+        setBtnLoading('btn-clean-stale', true);
         try {
           const response = await fetch("/api/action?action=clear-stale-sessions");
           const data = await response.json();
@@ -4490,6 +4512,8 @@
           }
         } catch (e) {
           showToast("❌ Cleanup error: " + e.message, "error");
+        } finally {
+          setBtnLoading('btn-clean-stale', false);
         }
       }
 
