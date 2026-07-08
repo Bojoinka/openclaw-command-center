@@ -290,8 +290,12 @@
             </div>
             <div style="margin-top: 8px">
               <div class="quota-stats">
+                <span>Est. Cost</span>
+                <span><span class="quota-value" id="instance-total-cost" style="font-size: 1.1rem">—</span></span>
+              </div>
+              <div class="quota-stats" style="margin-top: 4px; font-size: 0.8rem; color: var(--text-secondary)">
                 <span>Tokens</span>
-                <span><span class="quota-value" id="instance-total-tokens" style="font-size: 1.1rem">—</span></span>
+                <span id="instance-total-tokens">—</span>
               </div>
               <div class="quota-stats" style="margin-top: 4px; font-size: 0.8rem; color: var(--text-secondary)">
                 <span>Sessions (active / total)</span>
@@ -318,8 +322,8 @@
             </div>
             <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--text-muted)">
               <div class="quota-stats">
-                <span>All-Time Tokens</span>
-                <span><span class="quota-value" id="instance-alltime-tokens" style="color: var(--text)">—</span></span>
+                <span>All-Time Est. Cost</span>
+                <span><span class="quota-value" id="instance-alltime-cost" style="color: var(--text)">—</span></span>
               </div>
               <div class="quota-stats" style="margin-top: 2px">
                 <span>All-Time Sessions</span>
@@ -4591,7 +4595,10 @@
           const today = data.today || {};
           const win24h = costData.windows?.['24h'] || {};
 
-          // Today's totals — tokens from session data
+          // Today's totals — cost as primary, tokens secondary
+          const costEl = document.getElementById('instance-total-cost');
+          if (costEl) costEl.textContent = formatCost(today.totalCost || 0);
+
           const tokensEl = document.getElementById('instance-total-tokens');
           if (tokensEl) tokensEl.textContent = formatTokenCount(today.totalTokens || 0);
 
@@ -4602,7 +4609,7 @@
           const requestsEl = document.getElementById('instance-requests');
           if (requestsEl) requestsEl.textContent = (win24h.requests || 0).toLocaleString();
 
-          // By Model (today)
+          // By Model (today) — show cost as primary value
           const modelsEl = document.getElementById('instance-models');
           if (modelsEl && today.byModel) {
             const models = today.byModel.filter(m => m.tokens > 0);
@@ -4611,14 +4618,14 @@
                 models.map(m =>
                   '<div style="display:flex;justify-content:space-between;margin-bottom:2px">' +
                   '<span>' + m.name + '</span>' +
-                  '<span>' + formatTokenCount(m.tokens) + ' · ' + m.sessions + ' sess</span></div>'
+                  '<span>' + formatCost(m.cost) + ' · ' + m.sessions + ' sess</span></div>'
                 ).join('');
             } else {
               modelsEl.innerHTML = '<div style="color:var(--text-muted)">No usage today</div>';
             }
           }
 
-          // By Agent (today)
+          // By Agent (today) — show cost as primary value
           const agentsEl = document.getElementById('instance-agents');
           if (agentsEl && today.byAgent) {
             const agents = today.byAgent.filter(a => a.tokens > 0);
@@ -4626,16 +4633,16 @@
               agentsEl.innerHTML = agents.map(a =>
                 '<div style="display:flex;justify-content:space-between;margin-bottom:4px;align-items:center">' +
                 '<span style="font-weight:500;color:var(--text-secondary);text-transform:capitalize">' + a.name + '</span>' +
-                '<span style="text-align:right"><span style="color:var(--text)">' + formatTokenCount(a.tokens) + '</span><br><span style="font-size:0.7rem">' + a.sessions + ' session' + (a.sessions !== 1 ? 's' : '') + '</span></span></div>'
+                '<span style="text-align:right"><span style="color:var(--text)">' + formatCost(a.cost) + '</span><br><span style="font-size:0.7rem">' + a.sessions + ' session' + (a.sessions !== 1 ? 's' : '') + '</span></span></div>'
               ).join('');
             } else {
               agentsEl.innerHTML = '<div style="color:var(--text-muted)">No agent usage today</div>';
             }
           }
 
-          // All-time totals
-          const alltimeTokensEl = document.getElementById('instance-alltime-tokens');
-          if (alltimeTokensEl) alltimeTokensEl.textContent = formatTokenCount(data.totalTokens || 0);
+          // All-time totals — cost instead of tokens
+          const alltimeCostEl = document.getElementById('instance-alltime-cost');
+          if (alltimeCostEl) alltimeCostEl.textContent = formatCost(data.totalCost || 0);
 
           const alltimeSessionsEl = document.getElementById('instance-alltime-sessions');
           if (alltimeSessionsEl) alltimeSessionsEl.textContent = String(data.totalSessions || 0);
