@@ -500,194 +500,6 @@
           </div>
         </div>
 
-        <!-- Sessions Section -->
-        <div class="section" id="sessions-section">
-          <div class="section-header">
-            <div class="section-title">
-              📡 Sessions <span class="section-count" id="session-count">0</span>
-            </div>
-          </div>
-
-          <!-- Session Filters -->
-          <div class="section-filters">
-            <div class="filter-group">
-              <span class="filter-label">Status:</span>
-              <button
-                class="filter-btn active"
-                data-filter="all"
-                data-group="session-status"
-                onclick="setSessionFilter('status', 'all')"
-              >
-                All <span class="filter-count" id="filter-all-count">0</span>
-              </button>
-              <button
-                class="filter-btn"
-                data-filter="live"
-                data-group="session-status"
-                onclick="setSessionFilter('status', 'live')"
-              >
-                <span class="filter-dot live"></span>
-                Live <span class="filter-count" id="filter-live-count">0</span>
-              </button>
-              <button
-                class="filter-btn"
-                data-filter="recent"
-                data-group="session-status"
-                onclick="setSessionFilter('status', 'recent')"
-              >
-                <span class="filter-dot recent"></span>
-                Recent <span class="filter-count" id="filter-recent-count">0</span>
-              </button>
-              <button
-                class="filter-btn"
-                data-filter="idle"
-                data-group="session-status"
-                onclick="setSessionFilter('status', 'idle')"
-              >
-                <span class="filter-dot idle"></span>
-                Idle <span class="filter-count" id="filter-idle-count">0</span>
-              </button>
-            </div>
-            <div class="filter-group">
-              <span class="filter-label">Channel:</span>
-              <button
-                class="filter-btn active"
-                data-filter="all"
-                data-group="session-channel"
-                onclick="setSessionFilter('channel', 'all')"
-              >
-                All
-              </button>
-              <button
-                class="filter-btn"
-                data-filter="slack"
-                data-group="session-channel"
-                onclick="setSessionFilter('channel', 'slack')"
-              >
-                💬 Slack
-              </button>
-              <button
-                class="filter-btn"
-                data-filter="telegram"
-                data-group="session-channel"
-                onclick="setSessionFilter('channel', 'telegram')"
-              >
-                📱 Telegram
-              </button>
-              <button
-                class="filter-btn"
-                data-filter="discord"
-                data-group="session-channel"
-                onclick="setSessionFilter('channel', 'discord')"
-              >
-                🎮 Discord
-              </button>
-              <button
-                class="filter-btn"
-                data-filter="signal"
-                data-group="session-channel"
-                onclick="setSessionFilter('channel', 'signal')"
-              >
-                🔒 Signal
-              </button>
-              <button
-                class="filter-btn"
-                data-filter="whatsapp"
-                data-group="session-channel"
-                onclick="setSessionFilter('channel', 'whatsapp')"
-              >
-                📲 WhatsApp
-              </button>
-            </div>
-            <div class="filter-group">
-              <span class="filter-label">Kind:</span>
-              <button
-                class="filter-btn active"
-                data-filter="all"
-                data-group="session-kind"
-                onclick="setSessionFilter('kind', 'all')"
-              >
-                All
-              </button>
-              <button
-                class="filter-btn"
-                data-filter="main"
-                data-group="session-kind"
-                onclick="setSessionFilter('kind', 'main')"
-              >
-                Main
-              </button>
-              <button
-                class="filter-btn"
-                data-filter="subagent"
-                data-group="session-kind"
-                onclick="setSessionFilter('kind', 'subagent')"
-              >
-                Subagent
-              </button>
-              <button
-                class="filter-btn"
-                data-filter="cron"
-                data-group="session-kind"
-                onclick="setSessionFilter('kind', 'cron')"
-              >
-                ⏰ Cron
-              </button>
-            </div>
-          </div>
-
-          <div class="card-grid" id="sessions">
-            <!-- Skeleton loaders (replaced when data loads) -->
-            <div class="skeleton-card">
-              <div class="skeleton-header">
-                <div class="skeleton-circle"></div>
-                <div style="flex: 1">
-                  <div class="skeleton-bar title"></div>
-                  <div class="skeleton-bar subtitle"></div>
-                </div>
-                <div class="skeleton-badge"></div>
-              </div>
-              <div class="skeleton-bar text"></div>
-              <div class="skeleton-bar text short"></div>
-            </div>
-            <div class="skeleton-card">
-              <div class="skeleton-header">
-                <div class="skeleton-circle"></div>
-                <div style="flex: 1">
-                  <div class="skeleton-bar title"></div>
-                  <div class="skeleton-bar subtitle"></div>
-                </div>
-                <div class="skeleton-badge"></div>
-              </div>
-              <div class="skeleton-bar text"></div>
-              <div class="skeleton-bar text short"></div>
-            </div>
-            <div class="skeleton-card">
-              <div class="skeleton-header">
-                <div class="skeleton-circle"></div>
-                <div style="flex: 1">
-                  <div class="skeleton-bar title"></div>
-                  <div class="skeleton-bar subtitle"></div>
-                </div>
-                <div class="skeleton-badge"></div>
-              </div>
-              <div class="skeleton-bar text"></div>
-              <div class="skeleton-bar text short"></div>
-            </div>
-          </div>
-
-          <!-- Pagination Controls -->
-          <div class="pagination" id="sessions-pagination" style="display: none">
-            <button class="pagination-btn" id="pagination-prev" onclick="changePage(-1)" disabled>
-              ← Prev
-            </button>
-            <div class="pagination-pages" id="pagination-pages"></div>
-            <button class="pagination-btn" id="pagination-next" onclick="changePage(1)">
-              Next →
-            </button>
-            <div class="pagination-info" id="pagination-info"></div>
-          </div>
-        </div>
 
         <!-- Cron Jobs Section -->
         <div class="section" id="cron-section">
@@ -1141,6 +953,195 @@
                 <span style="font-size: 0.7rem; color: var(--text-muted)">Dashboard access</span>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Sessions Section -->
+        <div class="section" id="sessions-section">
+          <div class="section-header">
+            <div class="section-title">
+              📡 Sessions <span class="section-count" id="session-count">0</span>
+            </div>
+          </div>
+
+          <!-- Session Filters -->
+          <div class="section-filters">
+            <div class="filter-group">
+              <span class="filter-label">Status:</span>
+              <button
+                class="filter-btn active"
+                data-filter="all"
+                data-group="session-status"
+                onclick="setSessionFilter('status', 'all')"
+              >
+                All <span class="filter-count" id="filter-all-count">0</span>
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="live"
+                data-group="session-status"
+                onclick="setSessionFilter('status', 'live')"
+              >
+                <span class="filter-dot live"></span>
+                Live <span class="filter-count" id="filter-live-count">0</span>
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="recent"
+                data-group="session-status"
+                onclick="setSessionFilter('status', 'recent')"
+              >
+                <span class="filter-dot recent"></span>
+                Recent <span class="filter-count" id="filter-recent-count">0</span>
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="idle"
+                data-group="session-status"
+                onclick="setSessionFilter('status', 'idle')"
+              >
+                <span class="filter-dot idle"></span>
+                Idle <span class="filter-count" id="filter-idle-count">0</span>
+              </button>
+            </div>
+            <div class="filter-group">
+              <span class="filter-label">Channel:</span>
+              <button
+                class="filter-btn active"
+                data-filter="all"
+                data-group="session-channel"
+                onclick="setSessionFilter('channel', 'all')"
+              >
+                All
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="slack"
+                data-group="session-channel"
+                onclick="setSessionFilter('channel', 'slack')"
+              >
+                💬 Slack
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="telegram"
+                data-group="session-channel"
+                onclick="setSessionFilter('channel', 'telegram')"
+              >
+                📱 Telegram
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="discord"
+                data-group="session-channel"
+                onclick="setSessionFilter('channel', 'discord')"
+              >
+                🎮 Discord
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="signal"
+                data-group="session-channel"
+                onclick="setSessionFilter('channel', 'signal')"
+              >
+                🔒 Signal
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="whatsapp"
+                data-group="session-channel"
+                onclick="setSessionFilter('channel', 'whatsapp')"
+              >
+                📲 WhatsApp
+              </button>
+            </div>
+            <div class="filter-group">
+              <span class="filter-label">Kind:</span>
+              <button
+                class="filter-btn active"
+                data-filter="all"
+                data-group="session-kind"
+                onclick="setSessionFilter('kind', 'all')"
+              >
+                All
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="main"
+                data-group="session-kind"
+                onclick="setSessionFilter('kind', 'main')"
+              >
+                Main
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="subagent"
+                data-group="session-kind"
+                onclick="setSessionFilter('kind', 'subagent')"
+              >
+                Subagent
+              </button>
+              <button
+                class="filter-btn"
+                data-filter="cron"
+                data-group="session-kind"
+                onclick="setSessionFilter('kind', 'cron')"
+              >
+                ⏰ Cron
+              </button>
+            </div>
+          </div>
+
+          <div class="card-grid" id="sessions">
+            <!-- Skeleton loaders (replaced when data loads) -->
+            <div class="skeleton-card">
+              <div class="skeleton-header">
+                <div class="skeleton-circle"></div>
+                <div style="flex: 1">
+                  <div class="skeleton-bar title"></div>
+                  <div class="skeleton-bar subtitle"></div>
+                </div>
+                <div class="skeleton-badge"></div>
+              </div>
+              <div class="skeleton-bar text"></div>
+              <div class="skeleton-bar text short"></div>
+            </div>
+            <div class="skeleton-card">
+              <div class="skeleton-header">
+                <div class="skeleton-circle"></div>
+                <div style="flex: 1">
+                  <div class="skeleton-bar title"></div>
+                  <div class="skeleton-bar subtitle"></div>
+                </div>
+                <div class="skeleton-badge"></div>
+              </div>
+              <div class="skeleton-bar text"></div>
+              <div class="skeleton-bar text short"></div>
+            </div>
+            <div class="skeleton-card">
+              <div class="skeleton-header">
+                <div class="skeleton-circle"></div>
+                <div style="flex: 1">
+                  <div class="skeleton-bar title"></div>
+                  <div class="skeleton-bar subtitle"></div>
+                </div>
+                <div class="skeleton-badge"></div>
+              </div>
+              <div class="skeleton-bar text"></div>
+              <div class="skeleton-bar text short"></div>
+            </div>
+          </div>
+
+          <!-- Pagination Controls -->
+          <div class="pagination" id="sessions-pagination" style="display: none">
+            <button class="pagination-btn" id="pagination-prev" onclick="changePage(-1)" disabled>
+              ← Prev
+            </button>
+            <div class="pagination-pages" id="pagination-pages"></div>
+            <button class="pagination-btn" id="pagination-next" onclick="changePage(1)">
+              Next →
+            </button>
+            <div class="pagination-info" id="pagination-info"></div>
           </div>
         </div>
 
