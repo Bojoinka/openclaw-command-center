@@ -549,6 +549,41 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: "Method not allowed" }));
     }
     return;
+  } else if (pathname === "/api/api-costs/mtd") {
+    // Month-to-date actual costs from Anthropic + OpenAI billing APIs
+    const now = new Date();
+    const dayOfMonth = now.getDate(); // 1-based
+    // We need costs from the 1st through yesterday (API data lags 1 day)
+    // On the 1st, we have 0 days of data; on the 2nd we have 1 day, etc.
+    const days = Math.max(dayOfMonth - 1, 1); // at least 1 to avoid 0-day query
+    const { execFile } = require("child_process");
+    const script = path.join(PATHS.skills, "api-costs", "scripts", "api-costs.js");
+    execFile("node", [script, String(days)], { encoding: "utf8", timeout: 15000 }, (err, stdout) => {
+      if (err) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+        return;
+      }
+      try {
+        const data = JSON.parse(stdout);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          period: "mtd",
+          days_included: days,
+          month: now.toLocaleString("en-US", { month: "long", year: "numeric" }),
+          anthropic_mtd: data.anthropic?.total_cost || 0,
+          openai_mtd: data.openai?.total_cost || 0,
+          combined_mtd: (data.anthropic?.total_cost || 0) + (data.openai?.total_cost || 0),
+          note: "Lags ~1 day; today's charges appear tomorrow",
+          anthropic_detail: data.anthropic,
+          openai_detail: data.openai,
+        }, null, 2));
+      } catch (e) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Failed to parse api-costs output" }));
+      }
+    });
+    return;
   } else if (pathname === "/api/api-costs") {
     const days = parseInt(query.get("days") || "1", 10);
     const { execFile } = require("child_process");

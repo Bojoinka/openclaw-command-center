@@ -86,9 +86,9 @@
           <div class="stat-value" id="topbar-api-cost">-</div>
           <div class="stat-label">API Cost (Yesterday) 💰</div>
         </div>
-        <div class="stat" title="Projected monthly spend based on yesterday">
-          <div class="stat-value" id="topbar-monthly-est">-</div>
-          <div class="stat-label">Est. Monthly 📈</div>
+        <div class="stat" title="Month-to-date actual API spend (Anthropic + OpenAI)">
+          <div class="stat-value" id="topbar-mtd-cost">-</div>
+          <div class="stat-label">MTD Actual 📊</div>
         </div>
         <div class="stat" title="Main session capacity">
           <div class="stat-value" id="main-capacity">-</div>
@@ -2478,7 +2478,7 @@
         $set("est-cost", "textContent", stats.estCost || "$0.00");
         $set("nav-tokens", "textContent", stats.total || "0");
         $set("nav-cost", "textContent", stats.estCost || "$0.00");
-        $set("nav-monthly-cost", "textContent", stats.estMonthlyCost || "-");
+        // nav-mtd-cost is updated by fetchTopBarCosts() from /api/api-costs/mtd
         $set("nav-avg-tokens", "textContent", stats.avgTokensPerSession || "-");
         $set("nav-avg-cost", "textContent", stats.avgCostPerSession || "-");
 
@@ -3048,7 +3048,7 @@
           $set("est-cost", "textContent", data.tokenStats.estCost);
           $set("nav-tokens", "textContent", data.tokenStats.total);
           $set("nav-cost", "textContent", data.tokenStats.estCost);
-          $set("nav-monthly-cost", "textContent", data.tokenStats.estMonthlyCost || "-");
+          // nav-mtd-cost is updated by fetchTopBarCosts() from /api/api-costs/mtd
           $set("nav-avg-tokens", "textContent", data.tokenStats.avgTokensPerSession || "-");
           $set("nav-avg-cost", "textContent", data.tokenStats.avgCostPerSession || "-");
 
@@ -4648,15 +4648,27 @@
       // ── Top Bar API Costs ───────────────────────────────────────────────
       async function fetchTopBarCosts() {
         try {
-          const res = await fetch('/api/api-costs?days=1');
-          const data = await res.json();
-          if (data.error) return;
+          // Fetch yesterday's cost and MTD in parallel
+          const [dailyRes, mtdRes] = await Promise.all([
+            fetch('/api/api-costs?days=1'),
+            fetch('/api/api-costs/mtd'),
+          ]);
+          const dailyData = await dailyRes.json();
+          const mtdData = await mtdRes.json();
 
-          const combined = data.combined_cost || 0;
-          const topCost = document.getElementById('topbar-api-cost');
-          if (topCost) topCost.textContent = '$' + combined.toFixed(2);
-          const topMonthly = document.getElementById('topbar-monthly-est');
-          if (topMonthly) topMonthly.textContent = '$' + (combined * 30).toFixed(0);
+          if (!dailyData.error) {
+            const combined = dailyData.combined_cost || 0;
+            const topCost = document.getElementById('topbar-api-cost');
+            if (topCost) topCost.textContent = '$' + combined.toFixed(2);
+          }
+
+          if (!mtdData.error) {
+            const mtd = mtdData.combined_mtd || 0;
+            const topMtd = document.getElementById('topbar-mtd-cost');
+            if (topMtd) topMtd.textContent = '$' + mtd.toFixed(2);
+            // Also update sidebar badge
+            $set('nav-mtd-cost', 'textContent', '$' + mtd.toFixed(2));
+          }
         } catch (e) {
           console.error('[Top Bar Costs] Fetch error:', e.message);
         }
