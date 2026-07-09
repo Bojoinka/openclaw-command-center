@@ -494,6 +494,38 @@ const server = http.createServer(async (req, res) => {
         2,
       ),
     );
+  } else if (pathname === "/api/tailscale") {
+    // Tailscale serve status — runs `tailscale serve status --json`
+    const { execFile } = require("child_process");
+    execFile("tailscale", ["serve", "status", "--json"], { encoding: "utf8", timeout: 5000 }, (err, stdout) => {
+      if (err) {
+        // Fallback: try without --json (older versions)
+        execFile("tailscale", ["serve", "status"], { encoding: "utf8", timeout: 5000 }, (err2, stdout2) => {
+          if (err2) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ serves: [], error: err2.message }, null, 2));
+            return;
+          }
+          // Parse plain-text output into structured rows
+          const serves = parseTailscaleServePlaintext(stdout2);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ serves }, null, 2));
+        });
+        return;
+      }
+      try {
+        const json = JSON.parse(stdout);
+        const serves = parseTailscaleServeJson(json);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ serves }, null, 2));
+      } catch (e) {
+        // stdout wasn't JSON — parse as plaintext
+        const serves = parseTailscaleServePlaintext(stdout);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ serves }, null, 2));
+      }
+    });
+    return;
   } else if (pathname === "/api/cron") {
     const cron = getCronJobs();
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -662,6 +694,109 @@ const server = http.createServer(async (req, res) => {
     serveStatic(req, res);
   }
 });
+
+// ============================================================================
+// TAILSCALE SERVE PARSERS
+// ============================================================================
+
+/**
+ * Parse `tailscale serve status --json` output into a flat array of serve rows.
+ * JSON shape (v1.60+):
+ *   { TCP: { "443": { Handlers: { "/": { Proxy: "http://127.0.0.1:18789" } } } }, ... }
+ * or the newer flat shape:
+ *   { Services: [ { Proto, Addr, Handler, ... } ] }
+ */
+function parseTailscaleServeJson(json) {
+  const rows = [];
+
+  // Canonical shape: json.Web = { "hostname:PORT": { Handlers: { "/": { Proxy: "..." } } } }
+  // Also check json.TCP for HTTPS flag and json.AllowFunnel for funnel status.
+  if (json.Web && typeof json.Web === "object") {
+    const funnelPorts = new Set(Object.keys(json.AllowFunnel || {})
+      .map(k => k.split(":").pop()));
+
+    for (const [hostPort, webCfg] of Object.entries(json.Web)) {
+      const port = hostPort.split(":").pop() || "443";
+      const isFunnel = funnelPorts.has(port);
+      const handlers = webCfg.Handlers || {};
+      for (const [path, handlerCfg] of Object.entries(handlers)) {
+        rows.push({
+          proto: "https",
+          port,
+          handler: handlerCfg.Proxy || handlerCfg.Text || handlerCfg.Path || "-",
+          path,
+          mode: isFunnel ? "funnel" : "tailnet",
+        });
+      }
+      if (!Object.keys(handlers).length) {
+        rows.push({ proto: "https", port, handler: "-", path: "/", mode: isFunnel ? "funnel" : "tailnet" });
+      }
+    }
+    return rows;
+  }
+
+  // Newer flat Services array
+  if (Array.isArray(json.Services)) {
+    for (const s of json.Services) {
+      rows.push({
+        proto: s.Protocol || s.Proto || "https",
+        port: s.Port || s.Addr || "-",
+        handler: s.Handler || s.Backend || s.Proxy || "-",
+        path: s.MountPoint || s.Path || "/",
+        mode: s.Funnel ? "funnel" : "tailnet",
+      });
+    }
+    return rows;
+  }
+
+  // Fallback: TCP map shape
+  for (const [port, portCfg] of Object.entries(json.TCP || {})) {
+    const handlers = portCfg.Handlers || {};
+    for (const [path, handlerCfg] of Object.entries(handlers)) {
+      rows.push({
+        proto: "https",
+        port,
+        handler: handlerCfg.Proxy || handlerCfg.Text || handlerCfg.Path || "-",
+        path,
+        mode: handlerCfg.Funnel ? "funnel" : "tailnet",
+      });
+    }
+    if (!Object.keys(handlers).length) {
+      rows.push({ proto: "https", port, handler: portCfg.TCPForward || "-", path: "/", mode: "tailnet" });
+    }
+  }
+  return rows;
+}
+
+/**
+ * Parse plain-text `tailscale serve status` output into serve rows.
+ * Typical line: "https://hostname.tail...ts.net:3333  /  http://127.0.0.1:3333"
+ */
+function parseTailscaleServePlaintext(text) {
+  const rows = [];
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    // Match lines like: https://...:PORT  PATH  BACKEND
+    const m = trimmed.match(/^(https?):\/\/[^\s]+?(:(\d+))?\/?(\S*)\s+(\S+)/);
+    if (m) {
+      rows.push({
+        proto: m[1],
+        port: m[3] || "443",
+        handler: m[5] || "-",
+        path: "/" + (m[4] || ""),
+        mode: line.includes("funnel") ? "funnel" : "tailnet",
+      });
+    } else if (trimmed.match(/^\d+/)) {
+      // Compact format: PORT  PROTO  BACKEND
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 3) {
+        rows.push({ proto: parts[1] || "https", port: parts[0], handler: parts[2], path: "/", mode: "tailnet" });
+      }
+    }
+  }
+  return rows;
+}
 
 // ============================================================================
 // START SERVER
