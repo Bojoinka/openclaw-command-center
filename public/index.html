@@ -2499,8 +2499,8 @@
               <tr style="color:var(--text-muted);text-align:left;border-bottom:1px solid var(--border)">
                 <th style="padding:4px 8px">Proto</th>
                 <th style="padding:4px 8px">Port</th>
-                <th style="padding:4px 8px">Path</th>
                 <th style="padding:4px 8px">Backend</th>
+                <th style="padding:4px 8px">Service</th>
                 <th style="padding:4px 8px">Mode</th>
                 <th style="padding:4px 8px">Status</th>
               </tr>
@@ -2508,16 +2508,18 @@
             <tbody>
               ${serves.map(s => {
                 const isFunnel = s.mode === 'funnel';
-                const modeColor = isFunnel ? '#f97316' : '#22c55e';
                 const modeBadge = isFunnel
                   ? '<span style="color:#f97316;font-weight:600">funnel</span>'
                   : '<span style="color:#22c55e">tailnet</span>';
                 const statusDot = '<span style="color:#22c55e">●</span>';
+                const labelHtml = s.label
+                  ? `<span style="color:var(--text-muted);font-size:0.72rem">${escapeHtml(s.label)}</span>`
+                  : '<span style="color:var(--text-muted);opacity:0.4;font-size:0.7rem">unknown</span>';
                 return `<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
                   <td style="padding:5px 8px;font-weight:500;text-transform:uppercase;font-size:0.7rem">${statusDot} ${escapeHtml(s.proto)}</td>
                   <td style="padding:5px 8px;font-family:monospace;color:var(--accent)">${escapeHtml(String(s.port))}</td>
-                  <td style="padding:5px 8px;font-family:monospace;color:var(--text-muted)">${escapeHtml(s.path)}</td>
                   <td style="padding:5px 8px;color:var(--text-muted);font-family:monospace;font-size:0.72rem">${escapeHtml(s.handler)}</td>
+                  <td style="padding:5px 8px">${labelHtml}</td>
                   <td style="padding:5px 8px">${modeBadge}</td>
                   <td style="padding:5px 8px;color:#22c55e;font-size:0.7rem;font-weight:600">active</td>
                 </tr>`;

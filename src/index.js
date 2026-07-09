@@ -699,6 +699,16 @@ const server = http.createServer(async (req, res) => {
 // TAILSCALE SERVE PARSERS
 // ============================================================================
 
+// Friendly labels for known serve ports
+const TAILSCALE_PORT_LABELS = {
+  "443":   "OpenClaw Control UI (default HTTPS)",
+  "3333":  "Command Center (cron dashboard)",
+  "8899":  "Personal OneDrive OAuth callback",
+  "8989":  "Personal OneDrive OAuth callback (alt)",
+  "18789": "OpenClaw Gateway (Odin)",
+  "18790": "Freya Gateway",
+};
+
 /**
  * Parse `tailscale serve status --json` output into a flat array of serve rows.
  * JSON shape (v1.60+):
@@ -726,10 +736,11 @@ function parseTailscaleServeJson(json) {
           handler: handlerCfg.Proxy || handlerCfg.Text || handlerCfg.Path || "-",
           path,
           mode: isFunnel ? "funnel" : "tailnet",
+          label: TAILSCALE_PORT_LABELS[port] || "",
         });
       }
       if (!Object.keys(handlers).length) {
-        rows.push({ proto: "https", port, handler: "-", path: "/", mode: isFunnel ? "funnel" : "tailnet" });
+        rows.push({ proto: "https", port, handler: "-", path: "/", mode: isFunnel ? "funnel" : "tailnet", label: TAILSCALE_PORT_LABELS[port] || "" });
       }
     }
     return rows;
@@ -738,12 +749,14 @@ function parseTailscaleServeJson(json) {
   // Newer flat Services array
   if (Array.isArray(json.Services)) {
     for (const s of json.Services) {
+      const port = String(s.Port || s.Addr || "-");
       rows.push({
         proto: s.Protocol || s.Proto || "https",
-        port: s.Port || s.Addr || "-",
+        port,
         handler: s.Handler || s.Backend || s.Proxy || "-",
         path: s.MountPoint || s.Path || "/",
         mode: s.Funnel ? "funnel" : "tailnet",
+        label: TAILSCALE_PORT_LABELS[port] || "",
       });
     }
     return rows;
@@ -759,10 +772,11 @@ function parseTailscaleServeJson(json) {
         handler: handlerCfg.Proxy || handlerCfg.Text || handlerCfg.Path || "-",
         path,
         mode: handlerCfg.Funnel ? "funnel" : "tailnet",
+        label: TAILSCALE_PORT_LABELS[port] || "",
       });
     }
     if (!Object.keys(handlers).length) {
-      rows.push({ proto: "https", port, handler: portCfg.TCPForward || "-", path: "/", mode: "tailnet" });
+      rows.push({ proto: "https", port, handler: portCfg.TCPForward || "-", path: "/", mode: "tailnet", label: TAILSCALE_PORT_LABELS[port] || "" });
     }
   }
   return rows;
@@ -780,18 +794,21 @@ function parseTailscaleServePlaintext(text) {
     // Match lines like: https://...:PORT  PATH  BACKEND
     const m = trimmed.match(/^(https?):\/\/[^\s]+?(:(\d+))?\/?(\S*)\s+(\S+)/);
     if (m) {
+      const port = m[3] || "443";
       rows.push({
         proto: m[1],
-        port: m[3] || "443",
+        port,
         handler: m[5] || "-",
         path: "/" + (m[4] || ""),
         mode: line.includes("funnel") ? "funnel" : "tailnet",
+        label: TAILSCALE_PORT_LABELS[port] || "",
       });
     } else if (trimmed.match(/^\d+/)) {
       // Compact format: PORT  PROTO  BACKEND
       const parts = trimmed.split(/\s+/);
       if (parts.length >= 3) {
-        rows.push({ proto: parts[1] || "https", port: parts[0], handler: parts[2], path: "/", mode: "tailnet" });
+        const port = parts[0];
+        rows.push({ proto: parts[1] || "https", port, handler: parts[2], path: "/", mode: "tailnet", label: TAILSCALE_PORT_LABELS[port] || "" });
       }
     }
   }
