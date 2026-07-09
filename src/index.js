@@ -494,6 +494,42 @@ const server = http.createServer(async (req, res) => {
         2,
       ),
     );
+  } else if (pathname === "/api/pm2") {
+    // PM2 process list via `pm2 jlist`
+    const { execFile } = require("child_process");
+    // Try full path first (child process doesn't inherit user PATH)
+    const pm2Candidates = [
+      process.env.PM2_BIN || "",
+      "/home/odin/.npm-global/bin/pm2",
+      "/usr/local/bin/pm2",
+      "/usr/bin/pm2",
+      "pm2",
+    ].filter(Boolean);
+    const pm2Bin = pm2Candidates[0] || "pm2";
+    execFile(pm2Bin, ["jlist"], { encoding: "utf8", timeout: 8000 }, (err, stdout) => {
+      if (err) {
+        // Try next candidate
+        const next = pm2Candidates.find((b, i) => i > 0);
+        if (next && next !== pm2Bin) {
+          execFile(next, ["jlist"], { encoding: "utf8", timeout: 8000 }, (err2, stdout2) => {
+            if (err2) {
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ processes: [], error: err2.message }, null, 2));
+              return;
+            }
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ processes: parsePm2Jlist(stdout2) }, null, 2));
+          });
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ processes: [], error: err.message }, null, 2));
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ processes: parsePm2Jlist(stdout) }, null, 2));
+    });
+    return;
   } else if (pathname === "/api/tailscale") {
     // Tailscale serve status — runs `tailscale serve status --json`
     const { execFile } = require("child_process");
@@ -694,6 +730,28 @@ const server = http.createServer(async (req, res) => {
     serveStatic(req, res);
   }
 });
+
+// ============================================================================
+// PM2 PARSER
+// ============================================================================
+
+function parsePm2Jlist(stdout) {
+  try {
+    const raw = JSON.parse(stdout);
+    return raw.map((p) => ({
+      name:     p.name,
+      status:   p.pm2_env?.status || "unknown",
+      pid:      p.pid,
+      uptime:   p.pm2_env?.pm_uptime || null,
+      memory:   p.monit?.memory || 0,
+      cpu:      p.monit?.cpu ?? 0,
+      restarts: p.pm2_env?.restart_time ?? 0,
+      mode:     p.pm2_env?.exec_mode || "fork",
+    }));
+  } catch (e) {
+    return [];
+  }
+}
 
 // ============================================================================
 // TAILSCALE SERVE PARSERS
