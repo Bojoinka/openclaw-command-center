@@ -38,8 +38,8 @@ function createStateModule(deps) {
     getTokenStats,
     getCerebroTopics,
     runOpenClaw,
-    extractJSON,
     readTranscript,
+    getRawSessions,
   } = deps;
 
   const PATHS = CONFIG.paths;
@@ -169,15 +169,12 @@ function createStateModule(deps) {
       // Fall back to defaults
     }
 
-    // Try to get active counts from sessions (preferred - has full session keys)
+    // Preferred: derive active counts from the cached raw sessions (has full
+    // session keys, and is non-blocking — no per-call sync CLI invocation).
     try {
-      const output = runOpenClaw("sessions --json 2>/dev/null");
-      const jsonStr = extractJSON(output);
-      if (jsonStr) {
-        const data = JSON.parse(jsonStr);
-        const sessions = data.sessions || [];
+      const sessions = (getRawSessions && getRawSessions()) || [];
+      if (sessions.length > 0) {
         const fiveMinMs = 5 * 60 * 1000;
-
         for (const s of sessions) {
           // Only count sessions active in last 5 minutes
           if (s.ageMs > fiveMinMs) continue;
@@ -198,10 +195,13 @@ function createStateModule(deps) {
         return result;
       }
     } catch (e) {
-      console.error("Failed to get capacity from sessions, falling back to filesystem:", e.message);
+      console.error(
+        "Failed to get capacity from cached sessions, falling back to filesystem:",
+        e.message,
+      );
     }
 
-    // Count active sessions from filesystem (workaround for CLI returning styled text)
+    // Fallback (cold cache / no sessions): count active sessions from filesystem
     // Sessions active in last 5 minutes are considered "active"
     try {
       const sessionsDir = path.join(openclawDir, "agents", "main", "sessions");
@@ -563,13 +563,10 @@ function createStateModule(deps) {
   function getSubagentStatus() {
     const subagents = [];
     try {
-      const output = runOpenClaw("sessions --json 2>/dev/null");
-      const jsonStr = extractJSON(output);
-      if (jsonStr) {
-        const data = JSON.parse(jsonStr);
-        const subagentSessions = (data.sessions || []).filter(
-          (s) => s.key && s.key.includes(":subagent:"),
-        );
+      // Use cached raw sessions (non-blocking) instead of a sync CLI call.
+      const rawSessions = (getRawSessions && getRawSessions()) || [];
+      {
+        const subagentSessions = rawSessions.filter((s) => s.key && s.key.includes(":subagent:"));
 
         for (const s of subagentSessions) {
           const ageMs = s.ageMs || Infinity;

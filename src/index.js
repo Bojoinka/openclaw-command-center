@@ -190,6 +190,8 @@ const state = createStateModule({
   runOpenClaw,
   extractJSON,
   readTranscript: (sessionId) => sessions.readTranscript(sessionId),
+  // Cached raw session objects — lets capacity/subagents avoid blocking CLI calls
+  getRawSessions: () => sessions.getRawSessionsCached(),
 });
 
 // ============================================================================

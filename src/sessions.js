@@ -110,8 +110,11 @@ function createSessionsModule(deps) {
   // Effective channel map for this deployment (defaults + channels.json override)
   const channelMap = deps.channelMap || DEFAULT_CHANNEL_MAP;
 
-  // SESSION CACHE - Async refresh to avoid blocking
-  let sessionsCache = { sessions: [], timestamp: 0, refreshing: false };
+  // SESSION CACHE - Async refresh to avoid blocking.
+  // `raw` retains the unmapped session objects from the CLI so consumers that
+  // need raw fields (capacity, session detail, subagents) can read from cache
+  // instead of making their own blocking sync CLI calls.
+  let sessionsCache = { sessions: [], raw: [], timestamp: 0, refreshing: false };
   const SESSIONS_CACHE_TTL = 10000; // 10 seconds
 
   /**
@@ -345,6 +348,7 @@ function createSessionsModule(deps) {
 
         sessionsCache = {
           sessions: mapped,
+          raw: sessions,
           timestamp: Date.now(),
           refreshing: false,
         };
@@ -369,6 +373,36 @@ function createSessionsModule(deps) {
     }
 
     return sessionsCache.sessions;
+  }
+
+  /**
+   * Get the raw (unmapped) session objects from cache, triggering an async
+   * refresh when stale. On a cold cache (never populated) falls back to a
+   * single synchronous fetch so the very first request still works; steady
+   * state is fully non-blocking.
+   */
+  function getRawSessionsCached() {
+    const now = Date.now();
+    const isStale = now - sessionsCache.timestamp > SESSIONS_CACHE_TTL;
+
+    if (sessionsCache.timestamp === 0) {
+      // Cold start: one-time sync fetch to avoid an empty first render.
+      try {
+        const output = runOpenClaw("sessions --json 2>/dev/null");
+        const jsonStr = extractJSON(output);
+        if (jsonStr) {
+          const data = JSON.parse(jsonStr);
+          sessionsCache.raw = data.sessions || [];
+        }
+      } catch (e) {
+        // leave whatever we have
+      }
+      refreshSessionsCache(); // warm the full cache in the background
+    } else if (isStale && !sessionsCache.refreshing) {
+      refreshSessionsCache();
+    }
+
+    return sessionsCache.raw || [];
   }
 
   function getSessions(options = {}) {
@@ -430,14 +464,9 @@ function createSessionsModule(deps) {
   // Get detailed session info
   function getSessionDetail(sessionKey) {
     try {
-      // Get basic session info
-      const listOutput = runOpenClaw("sessions --json 2>/dev/null");
-      let sessionInfo = null;
-      const jsonStr = extractJSON(listOutput);
-      if (jsonStr) {
-        const data = JSON.parse(jsonStr);
-        sessionInfo = data.sessions?.find((s) => s.key === sessionKey);
-      }
+      // Get basic session info from the cached raw sessions (non-blocking in
+      // steady state; cold start does a one-time sync fetch inside the getter).
+      const sessionInfo = getRawSessionsCached().find((s) => s.key === sessionKey);
 
       if (!sessionInfo) {
         return { error: "Session not found" };
@@ -646,6 +675,7 @@ function createSessionsModule(deps) {
     mapSession,
     refreshSessionsCache,
     getSessionsCached,
+    getRawSessionsCached,
     getSessions,
     readTranscript,
     getSessionDetail,
