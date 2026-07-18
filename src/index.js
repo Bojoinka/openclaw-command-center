@@ -100,6 +100,7 @@ const AUTH_CONFIG = {
   allowedUsers: CONFIG.auth.allowedUsers,
   allowedIPs: CONFIG.auth.allowedIPs,
   publicPaths: CONFIG.auth.publicPaths,
+  trustProxy: CONFIG.auth.trustProxy,
 };
 
 // Profile-aware data directory

@@ -156,10 +156,25 @@ describe("auth module", () => {
         assert.ok(result.reason.includes("not in allowlist"));
       });
 
-      it("uses x-forwarded-for header when present", () => {
+      it("ignores x-forwarded-for by default (spoof protection)", () => {
+        // Socket IP not in allowlist; spoofed XFF claims an allowed IP.
+        // Without trustProxy set, XFF must be ignored -> denied.
         const req = mockReq("172.16.0.1", { "x-forwarded-for": "10.0.0.5, 172.16.0.1" });
         const result = checkAuth(req, authConfig);
+        assert.strictEqual(result.authorized, false);
+      });
+
+      it("honors x-forwarded-for when trustProxy is enabled", () => {
+        const trusted = { ...authConfig, trustProxy: true };
+        const req = mockReq("172.16.0.1", { "x-forwarded-for": "10.0.0.5, 172.16.0.1" });
+        const result = checkAuth(req, trusted);
         assert.strictEqual(result.authorized, true);
+      });
+
+      it("cannot be spoofed via x-forwarded-for even with trustProxy off", () => {
+        const req = mockReq("203.0.113.7", { "x-forwarded-for": "127.0.0.1" });
+        const result = checkAuth(req, authConfig);
+        assert.strictEqual(result.authorized, false);
       });
     });
 
@@ -186,6 +201,22 @@ describe("auth module", () => {
     it("includes auth mode in output", () => {
       const html = getUnauthorizedPage("denied", null, { mode: "cloudflare" });
       assert.ok(html.includes("cloudflare"));
+    });
+
+    it("escapes HTML in the detected user (reflected XSS protection)", () => {
+      const html = getUnauthorizedPage(
+        "denied",
+        { login: "<script>alert(1)</script>" },
+        { mode: "tailscale" },
+      );
+      assert.ok(!html.includes("<script>alert(1)</script>"), "raw script tag must not appear");
+      assert.ok(html.includes("&lt;script&gt;"), "should contain escaped markup");
+    });
+
+    it("escapes HTML in the reason string", () => {
+      const html = getUnauthorizedPage("<img src=x onerror=alert(1)>", null, { mode: "token" });
+      assert.ok(!html.includes("<img src=x"), "raw img tag must not appear");
+      assert.ok(html.includes("&lt;img"));
     });
   });
 });

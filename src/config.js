@@ -242,6 +242,11 @@ function loadConfig() {
         .split(",")
         .map((s) => s.trim()),
       publicPaths: fileConfig.auth?.publicPaths || ["/api/health", "/api/whoami", "/favicon.ico"],
+      // Only trust X-Forwarded-For when the server sits behind a known reverse
+      // proxy. Otherwise a client can spoof the header to bypass IP allowlists.
+      trustProxy:
+        (process.env.DASHBOARD_TRUST_PROXY || "").toLowerCase() === "true" ||
+        fileConfig.auth?.trustProxy === true,
     },
 
     // Branding

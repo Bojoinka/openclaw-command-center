@@ -74,8 +74,12 @@ function checkAuth(req, authConfig) {
     return { authorized: false, reason: `User ${email} not in allowlist`, user: { email } };
   }
   if (mode === "allowlist") {
-    const clientIP =
-      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket?.remoteAddress || "";
+    // Only honor X-Forwarded-For when explicitly told the server is behind a
+    // trusted proxy — otherwise it is client-controlled and trivially spoofed.
+    const forwardedFor = authConfig.trustProxy
+      ? req.headers["x-forwarded-for"]?.split(",")[0]?.trim()
+      : null;
+    const clientIP = forwardedFor || req.socket?.remoteAddress || "";
     const isAllowed = authConfig.allowedIPs.some((allowed) => {
       if (allowed === clientIP) return true;
       if (allowed.endsWith("/24")) {
@@ -92,10 +96,22 @@ function checkAuth(req, authConfig) {
   return { authorized: false, reason: "Unknown auth mode" };
 }
 
+// Escape HTML special chars to prevent reflected XSS from attacker-controlled
+// headers (tailscale-user-login, cf-access-...-email) flowing into this page.
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function getUnauthorizedPage(reason, user, authConfig) {
-  const userInfo = user
-    ? `<p class="user-info">Detected: ${user.login || user.email || user.ip || "unknown"}</p>`
-    : "";
+  const detected = user ? user.login || user.email || user.ip || "unknown" : null;
+  const userInfo = detected ? `<p class="user-info">Detected: ${escapeHtml(detected)}</p>` : "";
+  const safeReason = escapeHtml(reason);
+  const safeMode = escapeHtml(authConfig.mode);
 
   return `<!DOCTYPE html>
 <html>
@@ -133,14 +149,14 @@ function getUnauthorizedPage(reason, user, authConfig) {
     <div class="container">
         <div class="icon">🔐</div>
         <h1>Access Denied</h1>
-        <div class="reason">${reason}</div>
+        <div class="reason">${safeReason}</div>
         ${userInfo}
         <div class="instructions">
-            <p>This dashboard requires authentication via <strong>${authConfig.mode}</strong>.</p>
+            <p>This dashboard requires authentication via <strong>${safeMode}</strong>.</p>
             ${authConfig.mode === "tailscale" ? '<p style="margin-top:1rem">Make sure you\'re accessing via your Tailscale URL and your account is in the allowlist.</p>' : ""}
             ${authConfig.mode === "cloudflare" ? '<p style="margin-top:1rem">Make sure you\'re accessing via Cloudflare Access and your email is in the allowlist.</p>' : ""}
         </div>
-        <div class="auth-mode">Auth mode: <code>${authConfig.mode}</code></div>
+        <div class="auth-mode">Auth mode: <code>${safeMode}</code></div>
     </div>
 </body>
 </html>`;
