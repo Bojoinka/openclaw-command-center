@@ -292,10 +292,11 @@ function getRoutingStats(skillsPath, statePath, hours = 24) {
   }
 }
 
-// Start background refresh timers (call explicitly, not on require)
+// Start background refresh timers (call explicitly, not on require).
+// Intervals are unref'd so they never keep the process alive on their own.
 function startLlmUsageRefresh() {
-  setTimeout(() => refreshLlmUsageAsync(), 1000);
-  setInterval(() => refreshLlmUsageAsync(), LLM_CACHE_TTL_MS);
+  setTimeout(() => refreshLlmUsageAsync(), 1000).unref?.();
+  setInterval(() => refreshLlmUsageAsync(), LLM_CACHE_TTL_MS).unref?.();
 }
 
 module.exports = {

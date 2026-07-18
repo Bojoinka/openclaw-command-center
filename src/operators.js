@@ -245,8 +245,9 @@ async function refreshOperatorsAsync(dataDir, getOpenClawDir) {
 
 // Start background operators refresh (caller invokes this instead of auto-starting on load)
 function startOperatorsRefresh(dataDir, getOpenClawDir) {
-  setTimeout(() => refreshOperatorsAsync(dataDir, getOpenClawDir), 2000);
-  setInterval(() => refreshOperatorsAsync(dataDir, getOpenClawDir), 5 * 60 * 1000); // Every 5 minutes
+  setTimeout(() => refreshOperatorsAsync(dataDir, getOpenClawDir), 2000).unref?.();
+  // Every 5 minutes; unref so it never keeps the process alive on its own.
+  setInterval(() => refreshOperatorsAsync(dataDir, getOpenClawDir), 5 * 60 * 1000).unref?.();
 }
 
 /**

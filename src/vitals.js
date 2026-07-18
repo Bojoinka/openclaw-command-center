@@ -419,9 +419,18 @@ async function refreshVitalsAsync() {
   console.log("[Vitals] Cache refreshed async");
 }
 
-// Start background vitals refresh on startup
-setTimeout(() => refreshVitalsAsync(), 500);
-setInterval(() => refreshVitalsAsync(), VITALS_CACHE_TTL);
+// Start background vitals refresh. Call explicitly from server startup rather
+// than as an import side effect, so that merely requiring this module (e.g. in
+// tests) doesn't spawn timers or shell out. The interval is unref'd so it never
+// keeps the process alive on its own.
+let vitalsRefreshInterval = null;
+function startVitalsRefresh() {
+  setTimeout(() => refreshVitalsAsync(), 500).unref?.();
+  if (vitalsRefreshInterval) clearInterval(vitalsRefreshInterval);
+  vitalsRefreshInterval = setInterval(() => refreshVitalsAsync(), VITALS_CACHE_TTL);
+  vitalsRefreshInterval.unref?.();
+  return vitalsRefreshInterval;
+}
 
 function getSystemVitals() {
   const now = Date.now();
@@ -559,6 +568,7 @@ function getOptionalDeps() {
 
 module.exports = {
   refreshVitalsAsync,
+  startVitalsRefresh,
   getSystemVitals,
   checkOptionalDeps,
   getOptionalDeps,

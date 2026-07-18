@@ -62,7 +62,12 @@ const { getVersion } = require("./utils");
 const { CONFIG, getOpenClawDir } = require("./config");
 const { handleJobsRequest, isJobsRoute } = require("./jobs");
 const { runOpenClaw, runOpenClawAsync, extractJSON } = require("./openclaw");
-const { getSystemVitals, checkOptionalDeps, getOptionalDeps } = require("./vitals");
+const {
+  getSystemVitals,
+  checkOptionalDeps,
+  getOptionalDeps,
+  startVitalsRefresh,
+} = require("./vitals");
 const { checkAuth, getUnauthorizedPage } = require("./auth");
 const { loadPrivacySettings, savePrivacySettings } = require("./privacy");
 const {
@@ -201,6 +206,7 @@ process.nextTick(() => migrateDataDir(DATA_DIR, LEGACY_DATA_DIR));
 startOperatorsRefresh(DATA_DIR, getOpenClawDir);
 startLlmUsageRefresh();
 startTokenUsageRefresh(getOpenClawDir);
+startVitalsRefresh();
 
 // ============================================================================
 // STATIC FILE SERVER

@@ -476,6 +476,8 @@ function startTokenUsageRefresh(getOpenClawDir) {
   refreshInterval = setInterval(() => {
     refreshTokenUsageAsync(getOpenClawDir);
   }, TOKEN_USAGE_CACHE_TTL);
+  // Don't let the refresh timer keep the process alive on its own.
+  refreshInterval.unref?.();
 
   return refreshInterval;
 }
