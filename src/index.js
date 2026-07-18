@@ -127,6 +127,38 @@ function broadcastSSE(event, data) {
 }
 
 // ============================================================================
+// REQUEST BODY READER (with size cap to prevent memory-exhaustion DoS)
+// ============================================================================
+const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
+
+/**
+ * Read and buffer a request body, enforcing a maximum size.
+ * Calls onDone(body) on success. On overflow, responds 413 and calls nothing.
+ */
+function readBody(req, res, onDone, maxBytes = MAX_BODY_BYTES) {
+  let body = "";
+  let size = 0;
+  let aborted = false;
+
+  req.on("data", (chunk) => {
+    if (aborted) return;
+    size += chunk.length;
+    if (size > maxBytes) {
+      aborted = true;
+      res.writeHead(413, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Request body too large" }));
+      req.destroy();
+      return;
+    }
+    body += chunk;
+  });
+
+  req.on("end", () => {
+    if (!aborted) onDone(body);
+  });
+}
+
+// ============================================================================
 // INITIALIZE MODULES (wire up dependencies)
 // ============================================================================
 
@@ -340,11 +372,7 @@ const server = http.createServer((req, res) => {
       pathname.replace("/api/cerebro/topic/", "").replace("/status", ""),
     );
 
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk;
-    });
-    req.on("end", () => {
+    readBody(req, res, (body) => {
       try {
         const { status: newStatus } = JSON.parse(body);
 
@@ -538,9 +566,7 @@ const server = http.createServer((req, res) => {
         ),
       );
     } else if (method === "POST") {
-      let body = "";
-      req.on("data", (chunk) => (body += chunk));
-      req.on("end", () => {
+      readBody(req, res, (body) => {
         try {
           const newOp = JSON.parse(body);
           const existingIdx = data.operators.findIndex((op) => op.id === newOp.id);
@@ -589,9 +615,7 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify(settings, null, 2));
     } else if (req.method === "POST" || req.method === "PUT") {
-      let body = "";
-      req.on("data", (chunk) => (body += chunk));
-      req.on("end", () => {
+      readBody(req, res, (body) => {
         try {
           const updates = JSON.parse(body);
           const current = loadPrivacySettings(DATA_DIR);

@@ -64,6 +64,18 @@ describe("auth module", () => {
         const result = checkAuth(req, authConfig);
         assert.strictEqual(result.authorized, false);
       });
+
+      it("rejects a token that is a prefix of the real token", () => {
+        const req = mockReq("10.0.0.1", { authorization: "Bearer my-secret" });
+        const result = checkAuth(req, authConfig);
+        assert.strictEqual(result.authorized, false);
+      });
+
+      it("rejects when configured token is empty even if header token is empty", () => {
+        const req = mockReq("10.0.0.1", { authorization: "Bearer " });
+        const result = checkAuth(req, { mode: "token", token: "" });
+        assert.strictEqual(result.authorized, false);
+      });
     });
 
     describe("tailscale mode", () => {

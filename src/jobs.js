@@ -183,12 +183,31 @@ async function handleJobsRequest(req, res, pathname, query, method) {
     if (pauseMatch && method === "POST") {
       const jobId = decodeURIComponent(pauseMatch[1]);
 
-      // Parse body for reason
+      // Parse body for reason (capped to prevent memory-exhaustion DoS)
+      const MAX_JOB_BODY = 1024 * 1024; // 1 MB
       let body = "";
+      let bodySize = 0;
+      let bodyTooLarge = false;
       await new Promise((resolve) => {
-        req.on("data", (chunk) => (body += chunk));
+        req.on("data", (chunk) => {
+          bodySize += chunk.length;
+          if (bodySize > MAX_JOB_BODY) {
+            bodyTooLarge = true;
+            req.destroy();
+            resolve();
+            return;
+          }
+          body += chunk;
+        });
         req.on("end", resolve);
+        req.on("close", resolve);
       });
+
+      if (bodyTooLarge) {
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Request body too large" }));
+        return;
+      }
 
       let reason = null;
       try {

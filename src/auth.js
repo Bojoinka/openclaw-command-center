@@ -2,6 +2,22 @@
 // Authentication Module
 // ============================================================================
 
+const crypto = require("crypto");
+
+// Constant-time string comparison to avoid leaking the token via timing.
+function safeEqual(a, b) {
+  const bufA = Buffer.from(String(a || ""), "utf8");
+  const bufB = Buffer.from(String(b || ""), "utf8");
+  // timingSafeEqual throws on length mismatch; compare lengths first but still
+  // run the comparison on equal-length buffers so timing stays uniform.
+  if (bufA.length !== bufB.length) {
+    // Compare against itself to keep roughly constant work, then fail.
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 // Auth header names
 const AUTH_HEADERS = {
   tailscale: {
@@ -28,7 +44,7 @@ function checkAuth(req, authConfig) {
   if (mode === "token") {
     const authHeader = req.headers["authorization"] || "";
     const token = authHeader.replace(/^Bearer\s+/i, "");
-    if (token && token === authConfig.token) {
+    if (token && authConfig.token && safeEqual(token, authConfig.token)) {
       return { authorized: true, user: { type: "token" } };
     }
     return { authorized: false, reason: "Invalid or missing token" };
