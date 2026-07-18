@@ -18,6 +18,42 @@ English | [简体中文](README.zh-CN.md)
 
 ---
 
+## 🔀 What's changed in this fork
+
+> This is a fork of [`jontsai/openclaw-command-center`](https://github.com/jontsai/openclaw-command-center). The following hardening, correctness, performance, and cross-platform fixes were made on **2026-07-18** (see the [issue tracker](https://github.com/Bojoinka/openclaw-command-center/issues?q=is%3Aissue+is%3Aclosed) for full details). Test coverage grew from 170 to **212 passing tests (0 failures)**, and ESLint is at **0 warnings**.
+
+**🔒 Security**
+
+- Removed wildcard CORS (`Access-Control-Allow-Origin: *`) and added cross-origin (CSRF) write protection — a malicious web page can no longer read the API or trigger state changes. ([#1](https://github.com/Bojoinka/openclaw-command-center/issues/1))
+- Fixed a path-traversal write in the cerebro topic-status endpoint. ([#2](https://github.com/Bojoinka/openclaw-command-center/issues/2))
+- `allowlist` auth no longer trusts a spoofable `X-Forwarded-For` header unless `trustProxy` is enabled. ([#3](https://github.com/Bojoinka/openclaw-command-center/issues/3))
+- HTML-escaped the 403 page to prevent reflected XSS from auth headers. ([#4](https://github.com/Bojoinka/openclaw-command-center/issues/4))
+- Constant-time token comparison + 1 MB request-body size caps. ([#5](https://github.com/Bojoinka/openclaw-command-center/issues/5))
+
+**🐛 Correctness**
+
+- Operator `sessionCount` no longer inflates on every refresh (and self-heals corrupted counts). ([#6](https://github.com/Bojoinka/openclaw-command-center/issues/6))
+- Cost is now model-accurate (uses recorded per-request cost) with configurable rates; dropped the hardcoded model name. ([#7](https://github.com/Bojoinka/openclaw-command-center/issues/7))
+- Slack channel names are now deployment-configurable via `channels.json` instead of hardcoded IDs. ([#8](https://github.com/Bojoinka/openclaw-command-center/issues/8))
+- Fixed `routing-stats` returning all-time data when given a non-numeric `hours` param. ([#9](https://github.com/Bojoinka/openclaw-command-center/issues/9))
+
+**🪟 Windows support**
+
+- Native vitals on Windows (CPU/memory/disk/uptime via Node built-ins + PowerShell) and correct path handling — the dashboard now runs on Windows instead of showing zeros. ([#10](https://github.com/Bojoinka/openclaw-command-center/issues/10))
+
+**⚡ Performance**
+
+- Eliminated blocking synchronous CLI calls on hot request paths and the SSE heartbeat. ([#11](https://github.com/Bojoinka/openclaw-command-center/issues/11))
+- SSE heartbeat now honors the state cache instead of forcing a full rebuild every tick. ([#12](https://github.com/Bojoinka/openclaw-command-center/issues/12))
+- Cache transcript originator/topic (by file mtime) and operator reads, removing redundant disk I/O every refresh. ([#13](https://github.com/Bojoinka/openclaw-command-center/issues/13))
+- Refresh timers are started explicitly and `unref`'d so the process exits cleanly. ([#14](https://github.com/Bojoinka/openclaw-command-center/issues/14))
+
+**🧹 Cleanup**
+
+- Pagination clamping, explicit `OPTIONS` handling, dead-code removal, and ESLint down to zero warnings. ([#15](https://github.com/Bojoinka/openclaw-command-center/issues/15))
+
+---
+
 ## Why Command Center?
 
 Your AI agents are running 24/7. You need to know what they're doing.
