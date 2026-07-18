@@ -3,7 +3,12 @@ const assert = require("node:assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { loadChannelMap, parseSessionLabel, DEFAULT_CHANNEL_MAP } = require("../src/sessions");
+const {
+  loadChannelMap,
+  parseSessionLabel,
+  DEFAULT_CHANNEL_MAP,
+  createSessionsModule,
+} = require("../src/sessions");
 
 describe("sessions channel map", () => {
   describe("loadChannelMap", () => {
@@ -69,6 +74,60 @@ describe("sessions channel map", () => {
 
     it("labels telegram sessions", () => {
       assert.strictEqual(parseSessionLabel("agent:main:telegram:123"), "📱 Telegram");
+    });
+  });
+
+  describe("transcript caching (regression: #13 re-reads)", () => {
+    let ocDir;
+    const sessionId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let operatorLookups = 0;
+
+    before(() => {
+      ocDir = fs.mkdtempSync(path.join(os.tmpdir(), "sess-cache-"));
+      const sessionsDir = path.join(ocDir, "agents", "main", "sessions");
+      fs.mkdirSync(sessionsDir, { recursive: true });
+      const line = JSON.stringify({
+        type: "message",
+        message: {
+          role: "user",
+          content: "[Slack #cc-dev +1m 2026-07-18 10:00 PST] alice (UALICE): let's debug the code",
+        },
+      });
+      fs.writeFileSync(path.join(sessionsDir, `${sessionId}.jsonl`), line + "\n");
+    });
+
+    after(() => fs.rmSync(ocDir, { recursive: true, force: true }));
+
+    function makeModule() {
+      operatorLookups = 0;
+      return createSessionsModule({
+        getOpenClawDir: () => ocDir,
+        getOperatorBySlackId: () => {
+          operatorLookups++;
+          return { name: "Alice", role: "admin" };
+        },
+        runOpenClaw: () => null,
+        runOpenClawAsync: async () => null,
+        extractJSON: () => null,
+      });
+    }
+
+    it("caches originator by mtime (no repeat operator lookup)", () => {
+      const mod = makeModule();
+      const first = mod.getSessionOriginator(sessionId);
+      const second = mod.getSessionOriginator(sessionId);
+      assert.strictEqual(first.userId, "UALICE");
+      assert.strictEqual(first.displayName, "Alice");
+      assert.deepStrictEqual(first, second);
+      assert.strictEqual(operatorLookups, 1, "operator should only be looked up once (cached)");
+    });
+
+    it("detects and caches topic", () => {
+      const mod = makeModule();
+      const t1 = mod.getSessionTopic(sessionId);
+      const t2 = mod.getSessionTopic(sessionId);
+      assert.ok(typeof t1 === "string" && t1.length > 0, "should detect a topic");
+      assert.strictEqual(t1, t2);
     });
   });
 });

@@ -117,6 +117,26 @@ function createSessionsModule(deps) {
   let sessionsCache = { sessions: [], raw: [], timestamp: 0, refreshing: false };
   const SESSIONS_CACHE_TTL = 10000; // 10 seconds
 
+  // Per-transcript caches for originator and topic. A session's originator and
+  // topic are effectively immutable once set, so we key by file path and only
+  // recompute when the file's mtime changes. This avoids re-reading and
+  // re-parsing every transcript on every 10s sessions refresh.
+  const HEAD_BYTES = 50000; // enough for the first several messages
+  const originatorCache = new Map(); // path -> { mtimeMs, value }
+  const topicCache = new Map(); // path -> { mtimeMs, value }
+
+  // Read the first `bytes` of a file without loading the whole thing.
+  function readFileHead(filePath, bytes) {
+    const fd = fs.openSync(filePath, "r");
+    try {
+      const buffer = Buffer.alloc(bytes);
+      const read = fs.readSync(fd, buffer, 0, bytes, 0);
+      return read > 0 ? buffer.toString("utf8", 0, read) : "";
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+
   /**
    * Find transcript file for a session ID.
    * Handles both plain (sessionId.jsonl) and topic-suffixed (sessionId-topic-XXX.jsonl) files.
@@ -156,9 +176,28 @@ function createSessionsModule(deps) {
       const transcriptPath = findTranscriptPath(sessionId);
       if (!transcriptPath) return null;
 
-      const content = fs.readFileSync(transcriptPath, "utf8");
-      const lines = content.trim().split("\n");
+      // Serve from cache when the transcript hasn't changed since last parse.
+      const mtimeMs = fs.statSync(transcriptPath).mtimeMs;
+      const cached = originatorCache.get(transcriptPath);
+      if (cached && cached.mtimeMs === mtimeMs) {
+        return cached.value;
+      }
 
+      // Read only the head of the file — the originator is in the first few
+      // messages, so there's no need to load a potentially multi-MB transcript.
+      const content = readFileHead(transcriptPath, HEAD_BYTES);
+      const lines = content.split("\n").filter((l) => l.trim());
+      const value = extractOriginatorFromLines(lines);
+      originatorCache.set(transcriptPath, { mtimeMs, value });
+      return value;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Parse originator info from the first few transcript lines.
+  function extractOriginatorFromLines(lines) {
+    try {
       // Find the first user message to extract originator
       for (let i = 0; i < Math.min(lines.length, 10); i++) {
         try {
@@ -237,15 +276,19 @@ function createSessionsModule(deps) {
       const transcriptPath = findTranscriptPath(sessionId);
       if (!transcriptPath) return null;
 
+      // Serve from cache when the transcript hasn't changed since last parse.
+      const mtimeMs = fs.statSync(transcriptPath).mtimeMs;
+      const cached = topicCache.get(transcriptPath);
+      if (cached && cached.mtimeMs === mtimeMs) {
+        return cached.value;
+      }
+
       // Read first 50KB of transcript (enough for topic detection, fast)
-      const fd = fs.openSync(transcriptPath, "r");
-      const buffer = Buffer.alloc(50000);
-      const bytesRead = fs.readSync(fd, buffer, 0, 50000, 0);
-      fs.closeSync(fd);
-
-      if (bytesRead === 0) return null;
-
-      const content = buffer.toString("utf8", 0, bytesRead);
+      const content = readFileHead(transcriptPath, HEAD_BYTES);
+      if (!content) {
+        topicCache.set(transcriptPath, { mtimeMs, value: null });
+        return null;
+      }
       const lines = content.split("\n").filter((l) => l.trim());
 
       // Extract text from messages
@@ -272,10 +315,15 @@ function createSessionsModule(deps) {
         }
       }
 
-      if (textSamples.length === 0) return null;
+      if (textSamples.length === 0) {
+        topicCache.set(transcriptPath, { mtimeMs, value: null });
+        return null;
+      }
 
       const topics = detectTopics(textSamples.join(" "));
-      return topics.length > 0 ? topics.slice(0, 2).join(", ") : null;
+      const value = topics.length > 0 ? topics.slice(0, 2).join(", ") : null;
+      topicCache.set(transcriptPath, { mtimeMs, value });
+      return value;
     } catch (e) {
       return null;
     }

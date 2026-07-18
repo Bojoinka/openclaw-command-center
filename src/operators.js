@@ -13,6 +13,23 @@ function loadOperators(dataDir) {
   return { version: 1, operators: [], roles: {} };
 }
 
+// Short-lived cache of the loaded operators, keyed by dataDir. getOperatorBySlackId
+// is called once per session during the (frequent) sessions refresh, and the
+// operators file changes rarely, so caching the read for a few seconds removes
+// dozens of redundant disk reads/parses per refresh cycle.
+let opCache = { dataDir: null, data: null, timestamp: 0 };
+const OP_CACHE_TTL = 5000;
+
+function loadOperatorsCached(dataDir) {
+  const now = Date.now();
+  if (opCache.dataDir === dataDir && opCache.data && now - opCache.timestamp < OP_CACHE_TTL) {
+    return opCache.data;
+  }
+  const data = loadOperators(dataDir);
+  opCache = { dataDir, data, timestamp: now };
+  return data;
+}
+
 function saveOperators(dataDir, data) {
   try {
     if (!fs.existsSync(dataDir)) {
@@ -20,6 +37,8 @@ function saveOperators(dataDir, data) {
     }
     const operatorsFile = path.join(dataDir, "operators.json");
     fs.writeFileSync(operatorsFile, JSON.stringify(data, null, 2));
+    // Invalidate the read cache so subsequent lookups see the new data.
+    opCache = { dataDir: null, data: null, timestamp: 0 };
     return true;
   } catch (e) {
     console.error("Failed to save operators:", e.message);
@@ -28,7 +47,7 @@ function saveOperators(dataDir, data) {
 }
 
 function getOperatorBySlackId(dataDir, slackId) {
-  const data = loadOperators(dataDir);
+  const data = loadOperatorsCached(dataDir);
   return data.operators.find((op) => op.id === slackId || op.metadata?.slackId === slackId);
 }
 
@@ -262,6 +281,7 @@ function calculateOperatorStats(operatorData, allSessions) {
 
 module.exports = {
   loadOperators,
+  loadOperatorsCached,
   saveOperators,
   getOperatorBySlackId,
   refreshOperatorsAsync,
