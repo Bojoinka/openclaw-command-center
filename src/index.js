@@ -319,6 +319,15 @@ const server = http.createServer((req, res) => {
     }
   }
 
+  // Explicit OPTIONS handling: respond 204 instead of falling through to the
+  // static handler (404). No CORS headers are advertised — the dashboard is
+  // same-origin only — so cross-origin preflights still won't succeed.
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, { Allow: "GET, POST, PUT, OPTIONS" });
+    res.end();
+    return;
+  }
+
   // Fast path for health check
   if (pathname === "/api/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -503,8 +512,11 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(capacity, null, 2));
   } else if (pathname === "/api/sessions") {
-    const page = parseInt(query.get("page")) || 1;
-    const pageSize = parseInt(query.get("pageSize")) || 20;
+    // Clamp pagination: page >= 1, 1 <= pageSize <= 100. Guards against a
+    // negative page producing a negative slice offset (which returns items
+    // from the end of the list) and against absurd page sizes.
+    const page = Math.max(1, parseInt(query.get("page")) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(query.get("pageSize")) || 20));
     const statusFilter = query.get("status");
 
     const allSessions = sessions.getSessions({ limit: null });

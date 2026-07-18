@@ -34,7 +34,6 @@ function createStateModule(deps) {
     loadOperators,
     calculateOperatorStats,
     getLlmUsage,
-    getDailyTokenUsage,
     getTokenStats,
     getCerebroTopics,
     runOpenClaw,
@@ -66,7 +65,9 @@ function createStateModule(deps) {
         const uptimeRaw = execFileSync("uptime", [], { encoding: "utf8" });
         const match = uptimeRaw.match(/up\s+([^,]+)/);
         if (match) uptime = match[1].trim();
-      } catch (e) {}
+      } catch (e) {
+        /* uptime unavailable */
+      }
     }
 
     let gateway = "Unknown";
@@ -77,7 +78,9 @@ function createStateModule(deps) {
       } else if (status && status.includes("stopped")) {
         gateway = "Stopped";
       }
-    } catch (e) {}
+    } catch (e) {
+      /* gateway status unavailable */
+    }
 
     return {
       hostname,
@@ -131,7 +134,7 @@ function createStateModule(deps) {
               : text.includes("\u274C")
                 ? "\u274C"
                 : "\uD83D\uDCDD",
-            text: text.replace(/[\u2705\u274C\uD83D\uDCDD\uD83D\uDD27]/g, "").trim(),
+            text: text.replace(/[\u2705\u274C\u{1F4DD}\u{1F527}]/gu, "").trim(),
             time: today,
           });
         });

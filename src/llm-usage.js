@@ -274,7 +274,9 @@ function getRoutingStats(skillsPath, statePath, hours = 24) {
           if (entry.escalation_reason) stats.escalations++;
           if (entry.latency_ms) latencies.push(entry.latency_ms);
           if (entry.success === true) successes++;
-        } catch {}
+        } catch {
+          /* skip malformed line */
+        }
       }
 
       if (latencies.length > 0) {

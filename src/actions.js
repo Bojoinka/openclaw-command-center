@@ -42,7 +42,9 @@ function executeAction(action, deps) {
         try {
           const data = JSON.parse(sessions);
           sessionCount = data.sessions?.length || 0;
-        } catch (e) {}
+        } catch (e) {
+          /* unparseable output — leave count at 0 */
+        }
         results.output = [
           `Gateway: ${gateway?.includes("running") ? "OK Running" : "NOT Running"}`,
           `Sessions: ${sessionCount}`,
@@ -60,7 +62,9 @@ function executeAction(action, deps) {
             const data = JSON.parse(staleJson);
             staleCount = (data.sessions || []).filter((s) => s.ageMs > 24 * 60 * 60 * 1000).length;
           }
-        } catch (e) {}
+        } catch (e) {
+          /* unparseable output — leave count at 0 */
+        }
         results.output = `Found ${staleCount} stale sessions (>24h old).\nTo clean: openclaw sessions prune`;
         results.success = true;
         break;

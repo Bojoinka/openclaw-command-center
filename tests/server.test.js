@@ -71,6 +71,24 @@ describe("server", () => {
       `Expected 2xx/3xx/4xx status for root, got: ${statusCode}`,
     );
   });
+
+  it("clamps negative/zero pagination params on /api/sessions", async () => {
+    const { statusCode, body } = await httpGet(
+      `http://localhost:${TEST_PORT}/api/sessions?page=-3&pageSize=0`,
+    );
+    assert.strictEqual(statusCode, 200);
+    const data = JSON.parse(body);
+    assert.strictEqual(data.pagination.page, 1, "page should clamp to >= 1");
+    assert.ok(
+      data.pagination.pageSize >= 1 && data.pagination.pageSize <= 100,
+      `pageSize should clamp into [1,100], got ${data.pagination.pageSize}`,
+    );
+  });
+
+  it("responds 204 to OPTIONS instead of falling through to 404", async () => {
+    const { statusCode } = await httpRequest(`http://localhost:${TEST_PORT}/api/status`, "OPTIONS");
+    assert.strictEqual(statusCode, 204);
+  });
 });
 
 /**
@@ -91,5 +109,24 @@ function httpGet(url) {
         );
       })
       .on("error", reject);
+  });
+}
+
+/**
+ * HTTP request helper supporting an arbitrary method
+ */
+function httpRequest(url, method) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = http.request(
+      { hostname: u.hostname, port: u.port, path: u.pathname + u.search, method },
+      (res) => {
+        let body = "";
+        res.on("data", (chunk) => (body += chunk));
+        res.on("end", () => resolve({ statusCode: res.statusCode, headers: res.headers, body }));
+      },
+    );
+    req.on("error", reject);
+    req.end();
   });
 }

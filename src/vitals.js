@@ -364,7 +364,9 @@ async function refreshVitalsAsync() {
           vitals.temperature = parseFloat(tempMatch[1]);
           vitals.temperatureNote = null;
         }
-      } catch (e) {}
+      } catch (e) {
+        /* temperature probe unavailable */
+      }
     } else if (isMacOS) {
       const home = require("os").homedir();
       try {
@@ -378,7 +380,9 @@ async function refreshVitalsAsync() {
             vitals.temperature = parseFloat(tempMatch[1]);
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        /* temperature probe unavailable */
+      }
       if (!vitals.temperature) {
         try {
           const ioregRaw = await runCmd(
@@ -389,7 +393,9 @@ async function refreshVitalsAsync() {
           if (tempMatch) {
             vitals.temperature = Math.round(parseInt(tempMatch[1], 10) / 100);
           }
-        } catch (e) {}
+        } catch (e) {
+          /* temperature probe unavailable */
+        }
       }
     } else if (isLinux) {
       try {
@@ -399,7 +405,9 @@ async function refreshVitalsAsync() {
         if (temp) {
           vitals.temperature = Math.round(parseInt(temp, 10) / 1000);
         }
-      } catch (e) {}
+      } catch (e) {
+        /* temperature probe unavailable */
+      }
     }
   } catch (e) {
     console.error("[Vitals] Async refresh failed:", e.message);

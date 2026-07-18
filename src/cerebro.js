@@ -149,7 +149,9 @@ function getCerebroTopics(cerebroDir, options = {}) {
     if (fs.existsSync(orphansDir)) {
       try {
         result.orphans = fs.readdirSync(orphansDir).filter((f) => f.endsWith(".md")).length;
-      } catch (e) {}
+      } catch (e) {
+        /* orphans dir unreadable — leave count at 0 */
+      }
     }
 
     result.lastUpdated = latestModified ? latestModified.toISOString() : null;

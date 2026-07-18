@@ -256,7 +256,9 @@ function createSessionsModule(deps) {
               avatar: operator?.avatar || null,
             };
           }
-        } catch (e) {}
+        } catch (e) {
+          /* skip malformed line */
+        }
       }
 
       return null;
