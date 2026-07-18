@@ -3,6 +3,7 @@
  * Collects CPU, memory, disk, and temperature metrics
  */
 
+const os = require("os");
 const { runCmd, formatBytes } = require("./utils");
 
 // Vitals cache to reduce blocking
@@ -10,6 +11,102 @@ let cachedVitals = null;
 let lastVitalsUpdate = 0;
 const VITALS_CACHE_TTL = 30000; // 30 seconds - vitals don't change fast
 let vitalsRefreshing = false;
+
+// Sum idle/total CPU tick counters across all cores (for delta sampling).
+function cpuTicks() {
+  let idle = 0;
+  let total = 0;
+  for (const cpu of os.cpus()) {
+    for (const type of Object.keys(cpu.times)) total += cpu.times[type];
+    idle += cpu.times.idle;
+  }
+  return { idle, total };
+}
+
+// Format an uptime given in seconds into a compact human string.
+function formatUptime(seconds) {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (days > 0)
+    return `${days} day${days === 1 ? "" : "s"}, ${hours}:${String(mins).padStart(2, "0")}`;
+  if (hours > 0) return `${hours}:${String(mins).padStart(2, "0")}`;
+  return `${mins} min`;
+}
+
+/**
+ * Collect vitals on Windows using Node built-ins (+ one PowerShell disk query),
+ * since the POSIX tools (uptime, df, iostat, sysctl, /proc) don't exist here.
+ */
+async function collectWindowsVitals(vitals) {
+  vitals.hostname = os.hostname();
+  vitals.uptime = formatUptime(os.uptime());
+
+  // CPU: core count from os.cpus(); usage from a short idle/total delta sample.
+  const cores = os.cpus().length || 1;
+  vitals.cpu.cores = cores;
+  const brand = os.cpus()[0]?.model;
+  if (brand) vitals.cpu.brand = brand.trim();
+
+  const a = cpuTicks();
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const b = cpuTicks();
+  const idleDelta = b.idle - a.idle;
+  const totalDelta = b.total - a.total;
+  const usage =
+    totalDelta > 0 ? Math.max(0, Math.min(100, Math.round(100 * (1 - idleDelta / totalDelta)))) : 0;
+  vitals.cpu.usage = usage;
+  vitals.cpu.idlePercent = 100 - usage;
+  // Windows has no load average; os.loadavg() returns [0,0,0]. Approximate the
+  // 1-minute figure from current usage so the gauge isn't stuck at zero.
+  vitals.cpu.loadAvg = [Math.round((usage / 100) * cores * 100) / 100, 0, 0];
+
+  // Memory from Node built-ins.
+  vitals.memory.total = os.totalmem();
+  vitals.memory.free = os.freemem();
+  vitals.memory.used = vitals.memory.total - vitals.memory.free;
+  vitals.memory.percent =
+    vitals.memory.total > 0 ? Math.round((vitals.memory.used / vitals.memory.total) * 100) : 0;
+  vitals.memory.pressure =
+    vitals.memory.percent > 90 ? "critical" : vitals.memory.percent > 75 ? "warning" : "normal";
+
+  // Disk (system drive) via a CIM query. Uses -EncodedCommand (base64 UTF-16LE)
+  // to avoid the quoting hazards of passing a script through cmd.exe.
+  // Best-effort; leaves zeros on failure.
+  try {
+    const sysDrive = (process.env.SystemDrive || "C:").replace(/\\$/, "");
+    const script =
+      "Get-CimInstance Win32_LogicalDisk | " +
+      "Select-Object DeviceID,Size,FreeSpace | ConvertTo-Json -Compress";
+    const encoded = Buffer.from(script, "utf16le").toString("base64");
+    const raw = await runCmd(`powershell -NoProfile -NonInteractive -EncodedCommand ${encoded}`, {
+      fallback: "",
+      timeout: 8000,
+    });
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const drives = Array.isArray(parsed) ? parsed : [parsed];
+      const drive =
+        drives.find((d) => (d.DeviceID || "").toUpperCase() === sysDrive.toUpperCase()) ||
+        drives.find((d) => Number(d.Size) > 0);
+      const total = Number(drive?.Size) || 0;
+      const free = Number(drive?.FreeSpace) || 0;
+      if (total > 0) {
+        vitals.disk.total = total;
+        vitals.disk.free = free;
+        vitals.disk.used = total - free;
+        vitals.disk.percent = Math.round(((total - free) / total) * 100);
+      }
+    }
+  } catch (e) {
+    // Disk metrics unavailable; leave zeros.
+  }
+
+  // CPU temperature on Windows requires admin/WMI (OpenHardwareMonitor etc.);
+  // not attempted here.
+  vitals.temperature = null;
+  vitals.temperatureNote = "Not available on Windows without extra tooling";
+}
 
 // Async background refresh of system vitals (non-blocking)
 async function refreshVitalsAsync() {
@@ -28,6 +125,27 @@ async function refreshVitalsAsync() {
   // Detect platform for cross-platform support
   const isLinux = process.platform === "linux";
   const isMacOS = process.platform === "darwin";
+  const isWindows = process.platform === "win32";
+
+  // Windows: use Node built-ins instead of POSIX tools, then finalize below.
+  if (isWindows) {
+    try {
+      await collectWindowsVitals(vitals);
+    } catch (e) {
+      console.error("[Vitals] Windows refresh failed:", e.message);
+    }
+    vitals.memory.usedFormatted = formatBytes(vitals.memory.used);
+    vitals.memory.totalFormatted = formatBytes(vitals.memory.total);
+    vitals.memory.freeFormatted = formatBytes(vitals.memory.free);
+    vitals.disk.usedFormatted = formatBytes(vitals.disk.used);
+    vitals.disk.totalFormatted = formatBytes(vitals.disk.total);
+    vitals.disk.freeFormatted = formatBytes(vitals.disk.free);
+    cachedVitals = vitals;
+    lastVitalsUpdate = Date.now();
+    vitalsRefreshing = false;
+    console.log("[Vitals] Cache refreshed (windows)");
+    return;
+  }
 
   try {
     // Platform-specific commands

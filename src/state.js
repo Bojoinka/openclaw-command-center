@@ -54,11 +54,20 @@ function createStateModule(deps) {
   function getSystemStatus() {
     const hostname = os.hostname();
     let uptime = "\u2014";
-    try {
-      const uptimeRaw = execFileSync("uptime", [], { encoding: "utf8" });
-      const match = uptimeRaw.match(/up\s+([^,]+)/);
-      if (match) uptime = match[1].trim();
-    } catch (e) {}
+    if (process.platform === "win32") {
+      // No `uptime` binary on Windows; derive from os.uptime().
+      const secs = os.uptime();
+      const days = Math.floor(secs / 86400);
+      const hours = Math.floor((secs % 86400) / 3600);
+      const mins = Math.floor((secs % 3600) / 60);
+      uptime = days > 0 ? `${days}d ${hours}h` : hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+    } else {
+      try {
+        const uptimeRaw = execFileSync("uptime", [], { encoding: "utf8" });
+        const match = uptimeRaw.match(/up\s+([^,]+)/);
+        if (match) uptime = match[1].trim();
+      } catch (e) {}
+    }
 
     let gateway = "Unknown";
     try {

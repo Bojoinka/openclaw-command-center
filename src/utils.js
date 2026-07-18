@@ -22,12 +22,18 @@ function getVersion() {
 async function runCmd(cmd, options = {}) {
   const systemPath = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
   const envPath = process.env.PATH || "";
+  // On Windows the POSIX systemPath is meaningless and uses the wrong
+  // separator; leave PATH untouched so system executables resolve normally.
+  const patchedPath =
+    process.platform === "win32" || envPath.includes("/usr/sbin")
+      ? envPath
+      : `${systemPath}:${envPath}`;
   const opts = {
     encoding: "utf8",
     timeout: 10000,
     env: {
       ...process.env,
-      PATH: envPath.includes("/usr/sbin") ? envPath : `${systemPath}:${envPath}`,
+      PATH: patchedPath,
     },
     ...options,
   };

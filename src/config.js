@@ -178,10 +178,15 @@ function loadConfigFile() {
  */
 function expandPath(p) {
   if (!p) return p;
-  return p
+  const expanded = p
     .replace(/^~/, HOME)
     .replace(/\$HOME/g, HOME)
     .replace(/\$\{HOME\}/g, HOME);
+  // Normalize separators only when we actually expanded a home reference, so
+  // the result uses the platform separator (e.g. "~/a/b" -> C:\Users\x\a\b on
+  // Windows). Paths with no expansion are returned verbatim so an explicit
+  // POSIX path like "/absolute/path" is preserved unchanged.
+  return expanded === p ? p : path.normalize(expanded);
 }
 
 /**
