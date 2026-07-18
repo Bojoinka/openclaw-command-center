@@ -238,7 +238,9 @@ function getRoutingStats(skillsPath, statePath, hours = 24) {
         return { total_requests: 0, by_model: {}, by_task_type: {} };
       }
 
-      const cutoff = Date.now() - hours * 3600 * 1000;
+      // Use the validated safeHours (not raw hours) — a non-numeric ?hours=
+      // would make cutoff NaN and silently disable the time filter.
+      const cutoff = Date.now() - safeHours * 3600 * 1000;
       const lines = fs.readFileSync(logFile, "utf8").trim().split("\n").filter(Boolean);
 
       const stats = {

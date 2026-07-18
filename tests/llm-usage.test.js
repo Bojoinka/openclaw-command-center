@@ -1,6 +1,9 @@
-const { describe, it } = require("node:test");
+const { describe, it, before, after } = require("node:test");
 const assert = require("node:assert");
-const { transformLiveUsageData } = require("../src/llm-usage");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { transformLiveUsageData, getRoutingStats } = require("../src/llm-usage");
 
 describe("llm-usage module", () => {
   describe("transformLiveUsageData()", () => {
@@ -83,6 +86,40 @@ describe("llm-usage module", () => {
       };
       const result = transformLiveUsageData(usage);
       assert.ok(result.claude.session.resetsIn.includes("m"));
+    });
+  });
+
+  describe("getRoutingStats() JSONL fallback (regression: #9 NaN filter)", () => {
+    let stateDir;
+    const skillsDir = path.join(os.tmpdir(), "nonexistent-skills-dir-xyz");
+
+    before(() => {
+      stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "routing-"));
+      const now = Date.now();
+      const recent = new Date(now - 2 * 3600 * 1000).toISOString(); // 2h ago
+      const old = new Date(now - 48 * 3600 * 1000).toISOString(); // 48h ago
+      const lines = [
+        JSON.stringify({ timestamp: recent, selected_model: "opus", task_type: "code" }),
+        JSON.stringify({ timestamp: old, selected_model: "sonnet", task_type: "chat" }),
+      ];
+      fs.writeFileSync(path.join(stateDir, "routing-log.jsonl"), lines.join("\n") + "\n");
+    });
+
+    after(() => fs.rmSync(stateDir, { recursive: true, force: true }));
+
+    it("honors the 24h window (only the recent entry counts)", () => {
+      const stats = getRoutingStats(skillsDir, stateDir, 24);
+      assert.strictEqual(stats.total_requests, 1);
+    });
+
+    it("does not disable the filter on a non-numeric hours value", () => {
+      // With the bug, cutoff became NaN and every entry passed -> 2.
+      const stats = getRoutingStats(skillsDir, stateDir, "abc");
+      assert.strictEqual(
+        stats.total_requests,
+        1,
+        "non-numeric hours must default to 24h, not all-time",
+      );
     });
   });
 });
