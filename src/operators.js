@@ -190,10 +190,16 @@ async function refreshOperatorsAsync(dataDir, getOpenClawDir) {
     // Merge: auto-detected + existing manual entries
     for (const [id, autoOp] of operatorsMap) {
       if (existingMap.has(id)) {
-        // Update stats but preserve manual fields
+        // Update stats but preserve manual fields.
+        // sessionCount is a rolling count over the 7-day scan window, so it
+        // must be *set* to the freshly computed value, not accumulated —
+        // adding it every refresh re-counted the same overlapping window and
+        // inflated the number without bound. Recomputing also self-heals any
+        // previously inflated value on the next refresh.
         const manual = existingMap.get(id);
         manual.lastSeen = Math.max(manual.lastSeen || 0, autoOp.lastSeen);
-        manual.sessionCount = (manual.sessionCount || 0) + autoOp.sessionCount;
+        manual.firstSeen = Math.min(manual.firstSeen || autoOp.firstSeen, autoOp.firstSeen);
+        manual.sessionCount = autoOp.sessionCount;
       } else {
         existingMap.set(id, autoOp);
       }
