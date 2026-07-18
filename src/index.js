@@ -248,12 +248,32 @@ function handleApi(req, res) {
 // HTTP SERVER
 // ============================================================================
 const server = http.createServer((req, res) => {
-  // CORS headers
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  // No CORS headers: the dashboard is same-origin only. Emitting
+  // Access-Control-Allow-Origin would let any website read API data
+  // (session transcripts, hostnames, token spend) via drive-by fetch()
+  // since localhost requests are auto-authorized.
 
   const urlParts = req.url.split("?");
   const pathname = urlParts[0];
   const query = new URLSearchParams(urlParts[1] || "");
+
+  // Cross-origin write protection (CSRF): browsers send an Origin header on
+  // cross-site requests. If it's present and doesn't match this host, reject
+  // state-changing methods. Same-origin and non-browser clients are unaffected.
+  if (req.method !== "GET" && req.method !== "HEAD" && req.headers.origin) {
+    const host = req.headers.host || `localhost:${PORT}`;
+    let originHost = null;
+    try {
+      originHost = new URL(req.headers.origin).host;
+    } catch (e) {
+      // Malformed Origin — treat as cross-origin
+    }
+    if (originHost !== host) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Cross-origin requests are not allowed" }));
+      return;
+    }
+  }
 
   // Fast path for health check
   if (pathname === "/api/health") {
