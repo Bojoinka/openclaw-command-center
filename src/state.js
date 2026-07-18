@@ -73,9 +73,35 @@ function createStateModule(deps) {
     return {
       hostname,
       gateway,
-      model: "claude-opus-4-5",
+      model: detectPrimaryModel(),
       uptime,
     };
+  }
+
+  // Derive the primary model from live/recent sessions instead of hardcoding.
+  // Picks the most common model among recently-active sessions.
+  function detectPrimaryModel() {
+    try {
+      const sessions = getSessions({ limit: null }) || [];
+      const counts = new Map();
+      for (const s of sessions) {
+        if (!s.recentlyActive) continue;
+        const model = (s.model || "").replace("anthropic/", "").replace("openai/", "");
+        if (!model) continue;
+        counts.set(model, (counts.get(model) || 0) + 1);
+      }
+      let best = null;
+      let bestCount = 0;
+      for (const [model, count] of counts) {
+        if (count > bestCount) {
+          best = model;
+          bestCount = count;
+        }
+      }
+      return best || "unknown";
+    } catch (e) {
+      return "unknown";
+    }
   }
 
   // Get recent activity from memory files

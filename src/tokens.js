@@ -2,13 +2,40 @@ const fs = require("fs");
 const path = require("path");
 const { formatNumber, formatTokens } = require("./utils");
 
-// Claude Opus 4 pricing (per 1M tokens)
+// Default pricing (Claude Opus 4, per 1M tokens). Used only as a fallback for
+// estimating cost when the transcript doesn't carry a recorded cost. Override
+// via config.billing.tokenRates when running non-Opus models.
 const TOKEN_RATES = {
   input: 15.0, // $15/1M input tokens
   output: 75.0, // $75/1M output tokens
   cacheRead: 1.5, // $1.50/1M (90% discount from input)
   cacheWrite: 18.75, // $18.75/1M (25% premium on input)
 };
+
+// Merge configured token rates over the defaults (partial overrides allowed).
+function getConfiguredRates(config) {
+  const override = config?.billing?.tokenRates;
+  if (!override || typeof override !== "object") return TOKEN_RATES;
+  return {
+    input: Number.isFinite(override.input) ? override.input : TOKEN_RATES.input,
+    output: Number.isFinite(override.output) ? override.output : TOKEN_RATES.output,
+    cacheRead: Number.isFinite(override.cacheRead) ? override.cacheRead : TOKEN_RATES.cacheRead,
+    cacheWrite: Number.isFinite(override.cacheWrite) ? override.cacheWrite : TOKEN_RATES.cacheWrite,
+  };
+}
+
+/**
+ * Resolve the cost of a usage bucket, preferring the actual cost recorded in
+ * the transcripts (which is model-accurate, whatever mix of models ran) and
+ * falling back to rate-based estimation only when no cost was recorded.
+ * Returns { cost, source } where source is "recorded" or "estimated".
+ */
+function resolveBucketCost(bucket, rates = TOKEN_RATES) {
+  if (bucket && bucket.cost > 0) {
+    return { cost: bucket.cost, source: "recorded" };
+  }
+  return { cost: calculateCostForBucket(bucket, rates).totalCost, source: "estimated" };
+}
 
 // Token usage cache with async background refresh
 let tokenUsageCache = { data: null, timestamp: 0, refreshing: false };
@@ -221,8 +248,15 @@ function getCostBreakdown(config, getSessions, getOpenClawDir) {
     return { error: "Failed to get usage data" };
   }
 
-  // Calculate costs for 24h (primary display)
-  const costs = calculateCostForBucket(usage);
+  // Configurable rates (falls back to Opus defaults); used only when the
+  // transcript carries no recorded cost.
+  const rates = getConfiguredRates(config);
+
+  // Calculate costs for 24h (primary display). The component breakdown is
+  // always rate-based (explanatory), but the headline total prefers the
+  // model-accurate recorded cost.
+  const costs = calculateCostForBucket(usage, rates);
+  const resolved = resolveBucketCost(usage, rates);
 
   // Get plan info from config
   const planCost = config.billing?.claudePlanCost || 200;
@@ -238,15 +272,15 @@ function getCostBreakdown(config, getSessions, getOpenClawDir) {
   const windows = {};
   for (const [key, windowConfig] of Object.entries(windowConfigs)) {
     const bucket = usage.windows?.[key] || usage;
-    const bucketCosts = calculateCostForBucket(bucket);
-    const dailyAvg = bucketCosts.totalCost / windowConfig.days;
+    const bucketTotalCost = resolveBucketCost(bucket, rates).cost;
+    const dailyAvg = bucketTotalCost / windowConfig.days;
     const monthlyProjected = dailyAvg * 30;
     const monthlySavings = monthlyProjected - planCost;
 
     windows[key] = {
       label: windowConfig.label,
       days: windowConfig.days,
-      totalCost: bucketCosts.totalCost,
+      totalCost: bucketTotalCost,
       dailyAvg,
       monthlyProjected,
       monthlySavings,
@@ -270,15 +304,15 @@ function getCostBreakdown(config, getSessions, getOpenClawDir) {
     cacheWrite: usage.cacheWrite,
     requests: usage.requests,
 
-    // Pricing rates
+    // Pricing rates (as configured; defaults to Opus)
     rates: {
-      input: TOKEN_RATES.input.toFixed(2),
-      output: TOKEN_RATES.output.toFixed(2),
-      cacheRead: TOKEN_RATES.cacheRead.toFixed(2),
-      cacheWrite: TOKEN_RATES.cacheWrite.toFixed(2),
+      input: rates.input.toFixed(2),
+      output: rates.output.toFixed(2),
+      cacheRead: rates.cacheRead.toFixed(2),
+      cacheWrite: rates.cacheWrite.toFixed(2),
     },
 
-    // Cost calculation breakdown (24h)
+    // Cost calculation breakdown (24h, rate-based estimate)
     calculation: {
       inputCost: costs.inputCost,
       outputCost: costs.outputCost,
@@ -286,8 +320,9 @@ function getCostBreakdown(config, getSessions, getOpenClawDir) {
       cacheWriteCost: costs.cacheWriteCost,
     },
 
-    // Totals (24h for backward compatibility)
-    totalCost: costs.totalCost,
+    // Totals (24h for backward compatibility) — prefers recorded cost
+    totalCost: resolved.cost,
+    costSource: resolved.source,
     planCost,
     planName,
 
@@ -354,9 +389,10 @@ function getTokenStats(sessions, capacity, config = {}) {
   const totalOutput = usage?.output || 0;
   const total = totalInput + totalOutput;
 
-  // Calculate cost using shared helper
-  const costs = calculateCostForBucket(usage);
-  const estCost = costs.totalCost;
+  // Cost prefers the model-accurate recorded cost, falls back to configured
+  // (or default Opus) rates only when no cost was recorded in the transcripts.
+  const rates = getConfiguredRates(config);
+  const estCost = resolveBucketCost(usage, rates).cost;
 
   // Calculate savings vs plan cost (compare monthly to monthly)
   const planCost = config?.billing?.claudePlanCost ?? 200;
@@ -379,11 +415,10 @@ function getTokenStats(sessions, capacity, config = {}) {
 
   const savingsWindows = {};
   for (const [key, windowConfig] of Object.entries(windowConfigs)) {
-    // Map '3dma' -> '3d' for bucket lookup
-    const bucketKey = key.replace("dma", "d").replace("24h", "24h");
-    const bucket = usage.windows?.[bucketKey === "24h" ? "24h" : bucketKey] || usage;
-    const bucketCosts = calculateCostForBucket(bucket);
-    const dailyAvg = bucketCosts.totalCost / windowConfig.days;
+    // Map '3dma'/'7dma' -> '3d'/'7d' for bucket lookup; '24h' stays as-is
+    const bucketKey = key.replace("dma", "d");
+    const bucket = usage.windows?.[bucketKey] || usage;
+    const dailyAvg = resolveBucketCost(bucket, rates).cost / windowConfig.days;
     const monthlyProjected = dailyAvg * 30;
     const windowSavings = monthlyProjected - planCost;
     const windowSavingsPositive = windowSavings > 0;
@@ -447,6 +482,8 @@ function startTokenUsageRefresh(getOpenClawDir) {
 
 module.exports = {
   TOKEN_RATES,
+  getConfiguredRates,
+  resolveBucketCost,
   emptyUsageBucket,
   refreshTokenUsageAsync,
   getDailyTokenUsage,

@@ -271,6 +271,9 @@ function loadConfig() {
       ),
       claudePlanName:
         process.env.CLAUDE_PLAN_NAME || fileConfig.billing?.claudePlanName || "Claude Code Max",
+      // Optional per-1M-token rate overrides (defaults to Opus in tokens.js).
+      // Only used to *estimate* cost when a transcript has no recorded cost.
+      tokenRates: fileConfig.billing?.tokenRates || undefined,
     },
   };
 
