@@ -72,7 +72,7 @@ const {
   startOperatorsRefresh,
   calculateOperatorStats,
 } = require("./operators");
-const { createSessionsModule } = require("./sessions");
+const { createSessionsModule, loadChannelMap } = require("./sessions");
 const { getCronJobs } = require("./cron");
 const { getCerebroTopics, updateTopicStatus } = require("./cerebro");
 const {
@@ -169,6 +169,9 @@ const sessions = createSessionsModule({
   runOpenClaw,
   runOpenClawAsync,
   extractJSON,
+  // Deployment-specific channel names (channels.json in the data dir),
+  // falling back to built-in defaults.
+  channelMap: loadChannelMap(DATA_DIR),
 });
 
 // State module (factory pattern)

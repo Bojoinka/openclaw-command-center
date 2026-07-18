@@ -2,8 +2,11 @@ const fs = require("fs");
 const path = require("path");
 const { detectTopics } = require("./topics");
 
-// Channel ID to name mapping (auto-populated from Slack)
-const CHANNEL_MAP = {
+// Default channel ID -> name mapping. These are from the upstream author's
+// workspace and only serve as a fallback; every deployment should override via
+// a channels.json in the profile data dir (see loadChannelMap). Unmapped
+// channels fall back to their raw id.
+const DEFAULT_CHANNEL_MAP = {
   c0aax7y80np: "#cc-meta",
   c0ab9f8sdfe: "#cc-research",
   c0aan4rq7v5: "#cc-finance",
@@ -24,8 +27,37 @@ const CHANNEL_MAP = {
   c0absbnrsbe: "#cc-dashboard",
 };
 
+// Backwards-compatible alias for existing importers.
+const CHANNEL_MAP = DEFAULT_CHANNEL_MAP;
+
+/**
+ * Load a channel-id -> name map for this deployment.
+ * Reads channels.json from the profile data dir if present (lowercasing keys),
+ * merged over the built-in defaults. Returns the defaults on any error.
+ * channels.json may be either a flat { "cID": "#name" } object or
+ * { "channels": { ... } }.
+ */
+function loadChannelMap(dataDir) {
+  const map = { ...DEFAULT_CHANNEL_MAP };
+  if (!dataDir) return map;
+  try {
+    const file = path.join(dataDir, "channels.json");
+    if (!fs.existsSync(file)) return map;
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    const entries = parsed && parsed.channels ? parsed.channels : parsed;
+    if (entries && typeof entries === "object") {
+      for (const [id, name] of Object.entries(entries)) {
+        if (typeof name === "string") map[id.toLowerCase()] = name;
+      }
+    }
+  } catch (e) {
+    console.error("[Channels] Failed to load channels.json:", e.message);
+  }
+  return map;
+}
+
 // Parse session key into readable label
-function parseSessionLabel(key) {
+function parseSessionLabel(key, channelMap = DEFAULT_CHANNEL_MAP) {
   // Pattern: agent:main:slack:channel:CHANNEL_ID:thread:TIMESTAMP
   // or: agent:main:slack:channel:CHANNEL_ID
   // or: agent:main:main (telegram main)
@@ -36,7 +68,7 @@ function parseSessionLabel(key) {
     const channelIdx = parts.indexOf("channel");
     if (channelIdx >= 0 && parts[channelIdx + 1]) {
       const channelId = parts[channelIdx + 1].toLowerCase();
-      const channelName = CHANNEL_MAP[channelId] || `#${channelId}`;
+      const channelName = channelMap[channelId] || `#${channelId}`;
 
       // Check if it's a thread
       if (parts.includes("thread")) {
@@ -75,6 +107,8 @@ function parseSessionLabel(key) {
  */
 function createSessionsModule(deps) {
   const { getOpenClawDir, getOperatorBySlackId, runOpenClaw, runOpenClawAsync, extractJSON } = deps;
+  // Effective channel map for this deployment (defaults + channels.json override)
+  const channelMap = deps.channelMap || DEFAULT_CHANNEL_MAP;
 
   // SESSION CACHE - Async refresh to avoid blocking
   let sessionsCache = { sessions: [], timestamp: 0, refreshing: false };
@@ -263,7 +297,7 @@ function createSessionsModule(deps) {
     else if (s.key === "agent:main:main") sessionType = "main";
 
     const originator = getSessionOriginator(s.sessionId);
-    const label = s.groupChannel || s.displayName || parseSessionLabel(s.key);
+    const label = s.groupChannel || s.displayName || parseSessionLabel(s.key, channelMap);
     const topic = getSessionTopic(s.sessionId);
 
     const totalTokens = s.totalTokens || 0;
@@ -555,7 +589,7 @@ function createSessionsModule(deps) {
         const channelIdx = parts.indexOf("channel");
         if (channelIdx >= 0 && parts[channelIdx + 1]) {
           const channelId = parts[channelIdx + 1].toLowerCase();
-          channelDisplay = CHANNEL_MAP[channelId] || `#${channelId}`;
+          channelDisplay = channelMap[channelId] || `#${channelId}`;
         } else {
           channelDisplay = "Slack";
         }
@@ -619,4 +653,10 @@ function createSessionsModule(deps) {
   };
 }
 
-module.exports = { createSessionsModule, CHANNEL_MAP };
+module.exports = {
+  createSessionsModule,
+  CHANNEL_MAP,
+  DEFAULT_CHANNEL_MAP,
+  loadChannelMap,
+  parseSessionLabel,
+};
