@@ -688,18 +688,20 @@ server.listen(PORT, () => {
   setInterval(() => sessions.refreshSessionsCache(), SESSIONS_CACHE_TTL);
 });
 
-// SSE heartbeat
-let sseRefreshing = false;
+// SSE heartbeat.
+// Uses getFullState() (which honors STATE_CACHE_TTL) rather than
+// refreshState() — the latter forced a full rebuild every tick, defeating
+// the cache and re-running the memory/cerebro/cron scans every 15s. Now a
+// rebuild only happens when the cached state has actually expired; otherwise
+// clients get the cached snapshot cheaply. (No refresh flag needed — this
+// callback is fully synchronous, so it can't overlap itself.)
 setInterval(() => {
-  if (sseClients.size > 0 && !sseRefreshing) {
-    sseRefreshing = true;
-    try {
-      const fullState = state.refreshState();
-      broadcastSSE("update", fullState);
-      broadcastSSE("heartbeat", { clients: sseClients.size, timestamp: Date.now() });
-    } catch (e) {
-      console.error("[SSE] Broadcast error:", e.message);
-    }
-    sseRefreshing = false;
+  if (sseClients.size === 0) return;
+  try {
+    const fullState = state.getFullState();
+    broadcastSSE("update", fullState);
+    broadcastSSE("heartbeat", { clients: sseClients.size, timestamp: Date.now() });
+  } catch (e) {
+    console.error("[SSE] Broadcast error:", e.message);
   }
 }, 15000);
