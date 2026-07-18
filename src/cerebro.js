@@ -168,7 +168,20 @@ function getCerebroTopics(cerebroDir, options = {}) {
  * @returns {object} - Updated topic data or error
  */
 function updateTopicStatus(cerebroDir, topicId, newStatus) {
-  const topicDir = path.join(cerebroDir, "topics", topicId);
+  // Reject path traversal: topic IDs are plain directory names, never paths.
+  // Without this, an encoded "../.." in the URL writes topic.md anywhere.
+  if (!topicId || /[/\\]/.test(topicId) || topicId.includes("..") || topicId.startsWith(".")) {
+    return { error: "Invalid topic id", code: 400 };
+  }
+
+  const topicsRoot = path.resolve(cerebroDir, "topics");
+  const topicDir = path.resolve(topicsRoot, topicId);
+
+  // Belt-and-suspenders: resolved path must stay inside topics/
+  if (!topicDir.startsWith(topicsRoot + path.sep)) {
+    return { error: "Invalid topic id", code: 400 };
+  }
+
   const topicFile = path.join(topicDir, "topic.md");
 
   // Check if topic exists
